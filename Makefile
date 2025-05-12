@@ -44,7 +44,7 @@ $(BUILDDIR):
 
 install:
 	install -d $(DESTDIR)/usr/bin/
-	install -m 0755 target/release/biome $(DESTDIR)/usr/bin/proxmox-biome
+	install -m 0755 target/release/biome $(DESTDIR)/usr/bin/biome
 
 deb: $(DEB)
 $(DEB) $(DEB_DBG) &: $(BUILDDIR)
