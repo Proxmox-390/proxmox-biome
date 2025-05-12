@@ -1,0 +1,10 @@
+---
+source: crates/biome_js_analyze/tests/spec_tests.rs
+expression: valid_default_component.jsx
+---
+# Input
+```jsx
+/* should not generate diagnostics */
+const Component = () => <></>
+export default Component;
+```

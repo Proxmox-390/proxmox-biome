@@ -1,0 +1,69 @@
+---
+source: crates/biome_cli/tests/snap_test.rs
+expression: redactor(content)
+---
+## `biome.json`
+
+```json
+{
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "suspicious": {
+        "noDebugger": "error",
+        "noShadowRestrictedNames": "off",
+        "noExplicitAny": "off",
+        "useValidTypeof": "error",
+        "noAsyncPromiseExecutor": "off",
+        "noEmptyInterface": "error",
+        "noAssignInExpressions": "error",
+        "noConsole": {
+          "level": "error",
+          "options": {
+            "allow": ["info", "error", "warn", "time", "timeEnd"]
+          }
+        },
+        "noPrototypeBuiltins": "error",
+        "noVar": "error"
+      },
+      "style": {
+        "noDefaultExport": "error",
+        "noParameterAssign": "error",
+        "useAsConstAssertion": "error",
+        "useDefaultParameterLast": "error",
+        "useEnumInitializers": "error",
+        "useSelfClosingElements": "error",
+        "useConst": "error",
+        "useSingleVarDeclarator": "error",
+        "noUnusedTemplateLiteral": "error",
+        "useNumberNamespace": "error",
+        "noInferrableTypes": "error",
+        "noUselessElse": "error"
+      },
+      "correctness": {
+        "noConstantCondition": "error",
+        "noInvalidConstructorSuper": "error",
+        "noUnusedVariables": "error",
+        "noUnreachable": "error",
+        "noUnsafeFinally": "error",
+        "noSwitchDeclarations": "off",
+        "noSelfAssign": "off"
+      },
+      "nursery": {
+        "useNamingConvention": {
+          "level": "error",
+          "options": {
+            "strictCase": false
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+# Emitted Messages
+
+```block
+The configuration biome.json has been successfully migrated.
+```
