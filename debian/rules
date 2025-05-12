@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/pkg-info.mk
+
+#export DH_VERBOSE=1
+
+%:
+	dh $@
+
+override_dh_update_autotools_config:
+
+override_dh_autoclean:
+	cargo clean
+	dh_autoclean
+
+override_dh_auto_build:
+	BIOME_VERSION=0.0.1 cargo build --bin biome --release
