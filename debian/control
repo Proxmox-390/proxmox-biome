@@ -2,15 +2,13 @@ Source: proxmox-biome
 Section: admin
 Priority: optional
 Maintainer: Proxmox Support Team <support@proxmox.com>
-Build-Depends: debhelper-compat (= 12),
-               cargo,
+Build-Depends: cargo, debhelper-compat (= 12),
 Homepage: https://biomejs.dev/
 Standards-Version: 4.7.0.0
 
 Package: proxmox-biome
 Architecture: amd64
-Depends: ${misc:Depends},
-         ${shlibs:Depends},
+Depends: ${misc:Depends}, ${shlibs:Depends},
 Description: Biome offers JS formatter and linter, usable via CLI and LSP.
  Biome is a performant toolchain for web projects, it aims to provide developer
  tools to maintain the health of said projects.

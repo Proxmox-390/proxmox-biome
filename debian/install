@@ -1,2 +1,2 @@
-src/proxmox-biome /usr/bin/
-src/biome.json /usr/share/proxmox-biome/
+src/biome.json usr/share/proxmox-biome/
+src/proxmox-biome usr/bin/
