@@ -43,10 +43,6 @@ $(BUILDDIR):
 	  >> $@.tmp/.cargo/config.toml
 	mv $@.tmp $@
 
-install:
-	install -d $(DESTDIR)/usr/bin/
-	install -m 0755 target/release/biome $(DESTDIR)/usr/bin/biome
-
 deb: $(DEB)
 $(DEB) $(DEB_DBG) &: $(BUILDDIR)
 	cd $(BUILDDIR); dpkg-buildpackage -b -us -uc
