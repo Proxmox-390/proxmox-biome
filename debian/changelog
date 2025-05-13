@@ -1,3 +1,13 @@
+proxmox-biome (2.0.0~beta.3-2) unstable; urgency=medium
+
+  * add config that tries to follow the existing Proxmox Style guide, but with
+    indentation normalized to always being four spaces per level.
+
+  * add `proxmox-biome` wrapper executable that defaults to the shipped config
+    for every command that supports doing so.
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 13 May 2025 12:48:52 +0200
+
 proxmox-biome (2.0.0~beta.3-1) unstable; urgency=medium
 
   * initial packaging with vendored dependencies.
