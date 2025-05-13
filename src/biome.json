@@ -1,0 +1,130 @@
+{
+    "vcs": {
+        "enabled": false,
+        "clientKind": "git",
+        "useIgnoreFile": false
+    },
+    "files": {
+        "ignoreUnknown": false
+    },
+    "formatter": {
+        "enabled": true,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 100
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": false,
+            "complexity": {
+                "noAdjacentSpacesInRegex": "error",
+                "noExtraBooleanCast": "error",
+                "noUselessCatch": "error",
+                "noUselessEscapeInRegex": "error",
+                "noUselessLabel": "error",
+                "noUselessLoneBlockStatements": "error",
+                "noUselessStringConcat": "error",
+                "noUselessTernary": "warn",
+                "noUselessUndefinedInitialization": "error",
+                "noVoid": "error",
+                "noWith": "error",
+                "useLiteralKeys": "error",
+                "useRegexLiterals": "error"
+            },
+            "correctness": {
+                "noConstAssign": "error",
+                "noConstantCondition": "error",
+                "noConstructorReturn": "error",
+                "noEmptyCharacterClassInRegex": "error",
+                "noEmptyPattern": "error",
+                "noGlobalObjectCalls": "error",
+                "noInnerDeclarations": "error",
+                "noInvalidConstructorSuper": "error",
+                "noInvalidUseBeforeDeclaration": "error",
+                "noSelfAssign": "error",
+                "noSetterReturn": "error",
+                "noSwitchDeclarations": "error",
+                "noUndeclaredVariables": "error",
+                "noUnreachable": "error",
+                "noUnreachableSuper": "error",
+                "noUnsafeFinally": "error",
+                "noUnusedLabels": "error",
+                "noUnusedVariables": "error",
+                "useArrayLiterals": "warn",
+                "useIsNan": "error",
+                "useValidForDirection": "error",
+                "useYield": "error"
+            },
+            "security": {
+                "noGlobalEval": "error"
+            },
+            "style": {
+                "noCommaOperator": "error",
+                "noYodaExpression": "error",
+                "useBlockStatements": "error",
+                "useCollapsedElseIf": "warn",
+                "useConsistentBuiltinInstantiation": "error",
+                "useNumericLiterals": "warn"
+            },
+            "suspicious": {
+                "noAsyncPromiseExecutor": "error",
+                "noCatchAssign": "error",
+                "noClassAssign": "error",
+                "noCompareNegZero": "error",
+                "noControlCharactersInRegex": "error",
+                "noDebugger": "error",
+                "noDoubleEquals": "error",
+                "noDuplicateCase": "error",
+                "noDuplicateClassMembers": "error",
+                "noDuplicateElseIf": "error",
+                "noDuplicateObjectKeys": "error",
+                "noDuplicateParameters": "error",
+                "noEmptyBlockStatements": "error",
+                "noFallthroughSwitchClause": "error",
+                "noFunctionAssign": "error",
+                "noGlobalAssign": "error",
+                "noImportAssign": "error",
+                "noIrregularWhitespace": "error",
+                "noLabelVar": "error",
+                "noMisleadingCharacterClass": "error",
+                "noOctalEscape": "error",
+                "noPrototypeBuiltins": "error",
+                "noRedeclare": "error",
+                "noSelfCompare": "error",
+                "noShadowRestrictedNames": "error",
+                "noSparseArray": "error",
+                "noTemplateCurlyInString": "error",
+                "noUnsafeNegation": "error",
+                "useGetterReturn": "error",
+                "useGuardForIn": "error",
+                "useValidTypeof": "error"
+            }
+        },
+        "includes": ["**"]
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "single"
+        },
+        "globals": [
+            "apiSchema",
+            "console",
+            "cliUsageRenderer",
+            "Ext",
+            "marked",
+            "PBS",
+            "proxmoxOnlineHelpInfo",
+            "PVE",
+            "FormData",
+            "QRCode",
+            "pveOnlineHelpInfo",
+            "PVE_vnc_console_event",
+            "u2f",
+            "PMG",
+            "Proxmox",
+            "eslint",
+            "gettext"
+        ]
+    }
+}

@@ -38,6 +38,7 @@ $(BUILDDIR):
 	cp -a vendor/ $@.tmp/vendor
 	cp -a Makefile $@.tmp/
 	cp -a debian/ $@.tmp/debian
+	cp -a src/ $@.tmp/src
 	printf '\n[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "vendor"\n' \
 	  >> $@.tmp/.cargo/config.toml
 	mv $@.tmp $@

@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# wrapper around biome pointing to the shipped biome.json matching the Proxmox Javascript Style Guide
+
+set -e
+
+if [ "$#" -eq "0" ]; then
+    exec biome
+else
+    biome_command="$1"
+
+    case $biome_command in
+        check|lint|format|ci|init|migrate)
+            exec biome "$@" --config-path="/usr/share/proxmox-biome/biome.json"
+            ;;
+        *)
+            exec biome "$@"
+            ;;
+    esac
+fi
