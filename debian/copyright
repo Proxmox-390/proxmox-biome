@@ -4,7 +4,7 @@ Source: https://github.com/biomejs/biome
 Comment: Packaged for development use for Proxmox projects with some corners
 cut.
 
-Files: debian/*
+Files: debian/* src/*
 Copyright: 2025 Proxmox Support Team <support@proxmox.com>
 License: GPL-3.0+
 
