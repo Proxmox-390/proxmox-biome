@@ -66,30 +66,6 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
 ```block
 [
   {
-    "description": "The imports and exports are not sorted.",
-    "check_name": "assist/source/organizeImports",
-    "fingerprint": "4789482553704082688",
-    "severity": "minor",
-    "location": {
-      "path": "index.ts",
-      "lines": {
-        "begin": 1
-      }
-    }
-  },
-  {
-    "description": "The imports and exports are not sorted.",
-    "check_name": "assist/source/organizeImports",
-    "fingerprint": "71463377061397589",
-    "severity": "minor",
-    "location": {
-      "path": "main.ts",
-      "lines": {
-        "begin": 1
-      }
-    }
-  },
-  {
     "description": "This import is unused.",
     "check_name": "lint/correctness/noUnusedImports",
     "fingerprint": "12247285991248580551",
@@ -186,6 +162,18 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
     }
   },
   {
+    "description": "This variable is unused.",
+    "check_name": "lint/correctness/noUnusedVariables",
+    "fingerprint": "1113933937129958476",
+    "severity": "major",
+    "location": {
+      "path": "main.ts",
+      "lines": {
+        "begin": 19
+      }
+    }
+  },
+  {
     "description": "This import is unused.",
     "check_name": "lint/correctness/noUnusedImports",
     "fingerprint": "15775822807811823621",
@@ -212,7 +200,7 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
   {
     "description": "This variable is unused.",
     "check_name": "lint/correctness/noUnusedVariables",
-    "fingerprint": "1113933937129958476",
+    "fingerprint": "17581182407618726497",
     "severity": "major",
     "location": {
       "path": "main.ts",
@@ -224,7 +212,7 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
   {
     "description": "This variable is unused.",
     "check_name": "lint/correctness/noUnusedVariables",
-    "fingerprint": "17581182407618726497",
+    "fingerprint": "7876075472853952714",
     "severity": "major",
     "location": {
       "path": "main.ts",
@@ -236,7 +224,7 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
   {
     "description": "This variable is unused.",
     "check_name": "lint/correctness/noUnusedVariables",
-    "fingerprint": "7876075472853952714",
+    "fingerprint": "9844529903890075314",
     "severity": "major",
     "location": {
       "path": "main.ts",
@@ -248,7 +236,7 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
   {
     "description": "This variable is unused.",
     "check_name": "lint/correctness/noUnusedVariables",
-    "fingerprint": "9844529903890075314",
+    "fingerprint": "13391528371208812095",
     "severity": "major",
     "location": {
       "path": "main.ts",
@@ -260,7 +248,7 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
   {
     "description": "This variable is unused.",
     "check_name": "lint/correctness/noUnusedVariables",
-    "fingerprint": "13391528371208812095",
+    "fingerprint": "17201637410894263274",
     "severity": "major",
     "location": {
       "path": "main.ts",
@@ -270,12 +258,48 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
     }
   },
   {
-    "description": "This variable is unused.",
-    "check_name": "lint/correctness/noUnusedVariables",
-    "fingerprint": "17201637410894263274",
-    "severity": "major",
+    "description": "The imports and exports are not sorted.",
+    "check_name": "assist/source/organizeImports",
+    "fingerprint": "4789482553704082688",
+    "severity": "critical",
     "location": {
-      "path": "main.ts",
+      "path": "index.ts",
+      "lines": {
+        "begin": 1
+      }
+    }
+  },
+  {
+    "description": "Shouldn't redeclare 'f'. Consider to delete it or rename it.",
+    "check_name": "lint/suspicious/noRedeclare",
+    "fingerprint": "13204486605360217019",
+    "severity": "critical",
+    "location": {
+      "path": "index.ts",
+      "lines": {
+        "begin": 17
+      }
+    }
+  },
+  {
+    "description": "Shouldn't redeclare 'f'. Consider to delete it or rename it.",
+    "check_name": "lint/suspicious/noRedeclare",
+    "fingerprint": "8601445511714044637",
+    "severity": "critical",
+    "location": {
+      "path": "index.ts",
+      "lines": {
+        "begin": 18
+      }
+    }
+  },
+  {
+    "description": "Shouldn't redeclare 'f'. Consider to delete it or rename it.",
+    "check_name": "lint/suspicious/noRedeclare",
+    "fingerprint": "7842353260163629265",
+    "severity": "critical",
+    "location": {
+      "path": "index.ts",
       "lines": {
         "begin": 19
       }
@@ -289,7 +313,7 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
     "location": {
       "path": "index.ts",
       "lines": {
-        "begin": 4
+        "begin": 5
       }
     }
   },
@@ -301,18 +325,6 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
     "location": {
       "path": "index.ts",
       "lines": {
-        "begin": 5
-      }
-    }
-  },
-  {
-    "description": "Using == may be unsafe if you are relying on type coercion.",
-    "check_name": "lint/suspicious/noDoubleEquals",
-    "fingerprint": "18366180239442454213",
-    "severity": "critical",
-    "location": {
-      "path": "index.ts",
-      "lines": {
         "begin": 6
       }
     }
@@ -320,7 +332,7 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
   {
     "description": "Using == may be unsafe if you are relying on type coercion.",
     "check_name": "lint/suspicious/noDoubleEquals",
-    "fingerprint": "17264185503232320851",
+    "fingerprint": "18366180239442454213",
     "severity": "critical",
     "location": {
       "path": "index.ts",
@@ -464,7 +476,7 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
   {
     "description": "Shouldn't redeclare 'f'. Consider to delete it or rename it.",
     "check_name": "lint/suspicious/noRedeclare",
-    "fingerprint": "13204486605360217019",
+    "fingerprint": "4835254919265693190",
     "severity": "critical",
     "location": {
       "path": "index.ts",
@@ -476,7 +488,7 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
   {
     "description": "Shouldn't redeclare 'f'. Consider to delete it or rename it.",
     "check_name": "lint/suspicious/noRedeclare",
-    "fingerprint": "8601445511714044637",
+    "fingerprint": "3103625193263367010",
     "severity": "critical",
     "location": {
       "path": "index.ts",
@@ -486,86 +498,14 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
     }
   },
   {
-    "description": "Shouldn't redeclare 'f'. Consider to delete it or rename it.",
-    "check_name": "lint/suspicious/noRedeclare",
-    "fingerprint": "7842353260163629265",
-    "severity": "critical",
-    "location": {
-      "path": "index.ts",
-      "lines": {
-        "begin": 17
-      }
-    }
-  },
-  {
-    "description": "Shouldn't redeclare 'f'. Consider to delete it or rename it.",
-    "check_name": "lint/suspicious/noRedeclare",
-    "fingerprint": "4835254919265693190",
-    "severity": "critical",
-    "location": {
-      "path": "index.ts",
-      "lines": {
-        "begin": 18
-      }
-    }
-  },
-  {
-    "description": "Shouldn't redeclare 'f'. Consider to delete it or rename it.",
-    "check_name": "lint/suspicious/noRedeclare",
-    "fingerprint": "3103625193263367010",
-    "severity": "critical",
-    "location": {
-      "path": "index.ts",
-      "lines": {
-        "begin": 19
-      }
-    }
-  },
-  {
     "description": "Using == may be unsafe if you are relying on type coercion.",
     "check_name": "lint/suspicious/noDoubleEquals",
-    "fingerprint": "6143155163249580709",
+    "fingerprint": "17264185503232320851",
     "severity": "critical",
     "location": {
-      "path": "main.ts",
+      "path": "index.ts",
       "lines": {
         "begin": 4
-      }
-    }
-  },
-  {
-    "description": "Using == may be unsafe if you are relying on type coercion.",
-    "check_name": "lint/suspicious/noDoubleEquals",
-    "fingerprint": "16004470298861036684",
-    "severity": "critical",
-    "location": {
-      "path": "main.ts",
-      "lines": {
-        "begin": 5
-      }
-    }
-  },
-  {
-    "description": "Using == may be unsafe if you are relying on type coercion.",
-    "check_name": "lint/suspicious/noDoubleEquals",
-    "fingerprint": "6844513959367944349",
-    "severity": "critical",
-    "location": {
-      "path": "main.ts",
-      "lines": {
-        "begin": 6
-      }
-    }
-  },
-  {
-    "description": "Using == may be unsafe if you are relying on type coercion.",
-    "check_name": "lint/suspicious/noDoubleEquals",
-    "fingerprint": "3753031813987153088",
-    "severity": "critical",
-    "location": {
-      "path": "main.ts",
-      "lines": {
-        "begin": 7
       }
     }
   },
@@ -573,42 +513,6 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
     "description": "This is an unexpected use of the debugger statement.",
     "check_name": "lint/suspicious/noDebugger",
     "fingerprint": "1649488708621366899",
-    "severity": "critical",
-    "location": {
-      "path": "main.ts",
-      "lines": {
-        "begin": 9
-      }
-    }
-  },
-  {
-    "description": "This is an unexpected use of the debugger statement.",
-    "check_name": "lint/suspicious/noDebugger",
-    "fingerprint": "12725857318666866021",
-    "severity": "critical",
-    "location": {
-      "path": "main.ts",
-      "lines": {
-        "begin": 10
-      }
-    }
-  },
-  {
-    "description": "This is an unexpected use of the debugger statement.",
-    "check_name": "lint/suspicious/noDebugger",
-    "fingerprint": "17763028641383623546",
-    "severity": "critical",
-    "location": {
-      "path": "main.ts",
-      "lines": {
-        "begin": 11
-      }
-    }
-  },
-  {
-    "description": "This is an unexpected use of the debugger statement.",
-    "check_name": "lint/suspicious/noDebugger",
-    "fingerprint": "4368420040174731745",
     "severity": "critical",
     "location": {
       "path": "main.ts",
@@ -758,6 +662,102 @@ ci ━━━━━━━━━━━━━━━━━━━━━━━━━�
       "path": "main.ts",
       "lines": {
         "begin": 19
+      }
+    }
+  },
+  {
+    "description": "The imports and exports are not sorted.",
+    "check_name": "assist/source/organizeImports",
+    "fingerprint": "71463377061397589",
+    "severity": "critical",
+    "location": {
+      "path": "main.ts",
+      "lines": {
+        "begin": 1
+      }
+    }
+  },
+  {
+    "description": "Using == may be unsafe if you are relying on type coercion.",
+    "check_name": "lint/suspicious/noDoubleEquals",
+    "fingerprint": "6143155163249580709",
+    "severity": "critical",
+    "location": {
+      "path": "main.ts",
+      "lines": {
+        "begin": 4
+      }
+    }
+  },
+  {
+    "description": "Using == may be unsafe if you are relying on type coercion.",
+    "check_name": "lint/suspicious/noDoubleEquals",
+    "fingerprint": "16004470298861036684",
+    "severity": "critical",
+    "location": {
+      "path": "main.ts",
+      "lines": {
+        "begin": 5
+      }
+    }
+  },
+  {
+    "description": "Using == may be unsafe if you are relying on type coercion.",
+    "check_name": "lint/suspicious/noDoubleEquals",
+    "fingerprint": "6844513959367944349",
+    "severity": "critical",
+    "location": {
+      "path": "main.ts",
+      "lines": {
+        "begin": 6
+      }
+    }
+  },
+  {
+    "description": "Using == may be unsafe if you are relying on type coercion.",
+    "check_name": "lint/suspicious/noDoubleEquals",
+    "fingerprint": "3753031813987153088",
+    "severity": "critical",
+    "location": {
+      "path": "main.ts",
+      "lines": {
+        "begin": 7
+      }
+    }
+  },
+  {
+    "description": "This is an unexpected use of the debugger statement.",
+    "check_name": "lint/suspicious/noDebugger",
+    "fingerprint": "12725857318666866021",
+    "severity": "critical",
+    "location": {
+      "path": "main.ts",
+      "lines": {
+        "begin": 9
+      }
+    }
+  },
+  {
+    "description": "This is an unexpected use of the debugger statement.",
+    "check_name": "lint/suspicious/noDebugger",
+    "fingerprint": "17763028641383623546",
+    "severity": "critical",
+    "location": {
+      "path": "main.ts",
+      "lines": {
+        "begin": 10
+      }
+    }
+  },
+  {
+    "description": "This is an unexpected use of the debugger statement.",
+    "check_name": "lint/suspicious/noDebugger",
+    "fingerprint": "4368420040174731745",
+    "severity": "critical",
+    "location": {
+      "path": "main.ts",
+      "lines": {
+        "begin": 11
       }
     }
   }

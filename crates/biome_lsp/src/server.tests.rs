@@ -14,8 +14,8 @@ use biome_fs::{BiomePath, MemoryFileSystem, TemporaryFs};
 use biome_service::WorkspaceWatcher;
 use biome_service::workspace::{
     GetFileContentParams, GetSyntaxTreeParams, GetSyntaxTreeResult, OpenProjectParams,
-    PullDiagnosticsParams, PullDiagnosticsResult, ScanKind, ScanProjectFolderParams,
-    ScanProjectFolderResult,
+    OpenProjectResult, PullDiagnosticsParams, PullDiagnosticsResult, ScanKind,
+    ScanProjectFolderParams, ScanProjectFolderResult,
 };
 use camino::Utf8PathBuf;
 use futures::channel::mpsc::{Sender, channel};
@@ -385,7 +385,7 @@ async fn wait_for_notification(
     loop {
         let notification = tokio::select! {
             msg = receiver.next() => msg,
-            _ = sleep(Duration::from_secs(1)) => {
+            _ = sleep(Duration::from_secs(3)) => {
                 panic!("timed out waiting for the server to send diagnostics")
             }
         };
@@ -585,13 +585,15 @@ async fn document_lifecycle() -> Result<()> {
 
     // `open_project()` will return an existing key if called with a path
     // for an existing project.
-    let project_key = server
+    let OpenProjectResult { project_key, .. } = server
         .request(
             "biome/open_project",
             "open_project",
             OpenProjectParams {
                 path: BiomePath::new(""),
                 open_uninitialized: true,
+                only_rules: None,
+                skip_rules: None,
             },
         )
         .await?
@@ -645,13 +647,15 @@ async fn lifecycle_with_multiple_connections() -> Result<()> {
 
         // `open_project()` will return an existing key if called with a path
         // for an existing project.
-        let project_key = server
+        let OpenProjectResult { project_key, .. } = server
             .request(
                 "biome/open_project",
                 "open_project",
                 OpenProjectParams {
                     path: BiomePath::new(""),
                     open_uninitialized: true,
+                    only_rules: None,
+                    skip_rules: None,
                 },
             )
             .await?
@@ -689,13 +693,15 @@ async fn lifecycle_with_multiple_connections() -> Result<()> {
 
         // `open_project()` will return an existing key if called with a path
         // for an existing project.
-        let project_key = server
+        let OpenProjectResult { project_key, .. } = server
             .request(
                 "biome/open_project",
                 "open_project",
                 OpenProjectParams {
                     path: BiomePath::new(""),
                     open_uninitialized: true,
+                    only_rules: None,
+                    skip_rules: None,
                 },
             )
             .await?
@@ -786,6 +792,72 @@ async fn document_no_extension() -> Result<()> {
             },
         )
         .await?;
+
+    server.shutdown().await?;
+    reader.abort();
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn document_range_formatting() -> Result<()> {
+    let factory = ServerFactory::default();
+    let (service, client) = factory.create().into_inner();
+    let (stream, sink) = client.split();
+    let mut server = Server::new(service);
+
+    let (sender, _) = channel(CHANNEL_BUFFER_SIZE);
+    let reader = tokio::spawn(client_handler(stream, sink, sender));
+
+    server.initialize().await?;
+    server.initialized().await?;
+
+    server
+        .notify(
+            "textDocument/didOpen",
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri!("document.js"),
+                    language_id: String::from("javascript"),
+                    version: 0,
+                    text: String::from("doNotFormatHere()\nformatHere()\ndoNotFormatHere()\n"),
+                },
+            },
+        )
+        .await?;
+
+    let res: Option<Vec<TextEdit>> = server
+        .request(
+            "textDocument/rangeFormatting",
+            "formatting",
+            DocumentRangeFormattingParams {
+                text_document: TextDocumentIdentifier {
+                    uri: uri!("document.js"),
+                },
+                range: Range::new(Position::new(1, 0), Position::new(2, 0)),
+                options: FormattingOptions {
+                    tab_size: 4,
+                    insert_spaces: false,
+                    properties: HashMap::default(),
+                    trim_trailing_whitespace: None,
+                    insert_final_newline: None,
+                    trim_final_newlines: None,
+                },
+                work_done_progress_params: WorkDoneProgressParams {
+                    work_done_token: None,
+                },
+            },
+        )
+        .await?
+        .context("formatting returned None")?;
+
+    assert_eq!(
+        res.context("formatting did not return an edit list")?,
+        vec![TextEdit::new(
+            Range::new(Position::new(1, 12), Position::new(1, 12)),
+            ";".to_string()
+        )]
+    );
 
     server.shutdown().await?;
     reader.abort();
@@ -2565,13 +2637,15 @@ isSpreadAssignment;
 
     // `open_project()` will return an existing key if called with a path
     // for an existing project.
-    let project_key = server
+    let OpenProjectResult { project_key, .. } = server
         .request(
             "biome/open_project",
             "open_project",
             OpenProjectParams {
                 path: BiomePath::new(""),
                 open_uninitialized: true,
+                skip_rules: None,
+                only_rules: None,
             },
         )
         .await?
@@ -3203,7 +3277,7 @@ async fn pull_source_assist_action() -> Result<()> {
 }
 
 #[tokio::test]
-async fn watcher_updates_module_graph() -> Result<()> {
+async fn watcher_updates_module_graph_simple() -> Result<()> {
     const FOO_CONTENT: &str = r#"import { bar } from "./bar.ts";
 
 export function foo() {
@@ -3261,13 +3335,18 @@ export function bar() {
 
     server.initialize().await?;
 
-    let project_key = server
+    let OpenProjectResult {
+        project_key,
+        scan_kind,
+    } = server
         .request(
             "biome/open_project",
             "open_project",
             OpenProjectParams {
                 path: fs.working_directory.clone().into(),
                 open_uninitialized: true,
+                skip_rules: None,
+                only_rules: None,
             },
         )
         .await?
@@ -3283,7 +3362,7 @@ export function bar() {
                 path: None,
                 watch: true,
                 force: false,
-                scan_kind: ScanKind::Project,
+                scan_kind,
             },
         )
         .await?
@@ -3478,13 +3557,15 @@ export function bar() {
 
     server.initialize().await?;
 
-    let project_key = server
+    let OpenProjectResult { project_key, .. } = server
         .request(
             "biome/open_project",
             "open_project",
             OpenProjectParams {
                 path: fs.working_directory.clone().into(),
                 open_uninitialized: true,
+                only_rules: None,
+                skip_rules: None,
             },
         )
         .await?
@@ -3623,3 +3704,104 @@ export function bar() {
 
     Ok(())
 }
+
+// #region MONOREPO TESTS
+
+#[tokio::test]
+#[ignore]
+async fn pull_diagnostics_monorepo() -> Result<()> {
+    let mut fs = MemoryFileSystem::default();
+
+    fs.insert(
+        to_utf8_file_path_buf(uri!("biome.json")),
+        r#"{
+  "root": true,
+  "linter": {
+    "enabled": false
+  }
+}
+"#,
+    );
+    fs.insert(
+        to_utf8_file_path_buf(uri!("packages/lib/biome.json")),
+        r#"{
+  "linter": {
+    "enabled": true
+  }
+}
+"#,
+    );
+    fs.insert(
+        to_utf8_file_path_buf(uri!("file.ts")),
+        r#"const a = 1; a = 2;"#,
+    );
+    fs.insert(
+        to_utf8_file_path_buf(uri!("packages/lib/file.ts")),
+        r#"const a = 1; a = 2;"#,
+    );
+
+    let factory = ServerFactory::new_with_fs(Box::new(fs));
+    let (service, client) = factory.create().into_inner();
+    let (stream, sink) = client.split();
+    let mut server = Server::new(service);
+
+    let (sender, mut receiver) = channel(CHANNEL_BUFFER_SIZE);
+    let reader = tokio::spawn(client_handler(stream, sink, sender));
+
+    server.initialize().await?;
+    server.initialized().await?;
+
+    server.load_configuration().await?;
+
+    server
+        .open_named_document(
+            r#"const a = 1; a = 2;"#,
+            uri!("packages/lib/file.ts"),
+            "typescript",
+        )
+        .await?;
+
+    let notification = wait_for_notification(&mut receiver, |n| n.is_publish_diagnostics()).await;
+    let notification = notification.unwrap();
+    assert_diagnostics_count(&notification, 1);
+    assert_diagnostic_code(&notification, "noConstAssign");
+
+    server.close_document().await?;
+
+    server.shutdown().await?;
+    reader.abort();
+
+    Ok(())
+}
+
+// #endregion
+
+// #region TEST UTILS
+
+fn assert_diagnostic_code(server_notification: &ServerNotification, code: &str) {
+    match server_notification {
+        ServerNotification::PublishDiagnostics(publish) => {
+            assert!(publish.diagnostics.iter().all(|d| {
+                d.code
+                    .as_ref()
+                    .is_some_and(|c| &NumberOrString::String(code.to_string()) == c)
+            }));
+        }
+        ServerNotification::ShowMessage(_) => {
+            panic!("Unexpected notification: {:?}", server_notification);
+        }
+    }
+}
+
+fn assert_diagnostics_count(server_notification: &ServerNotification, expected_count: usize) {
+    match server_notification {
+        ServerNotification::PublishDiagnostics(publish) => {
+            assert_eq!(publish.diagnostics.len(), expected_count)
+        }
+        ServerNotification::ShowMessage(_) => {
+            panic!("Unexpected notification: {:?}", server_notification);
+        }
+    }
+}
+
+// #endregion

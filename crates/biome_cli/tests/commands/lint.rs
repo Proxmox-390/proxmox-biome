@@ -45,7 +45,7 @@ debugger;
 console.log(a);
 ";
 
-const APPLY_SUGGESTED_AFTER: &str = "let a = 4;\nconsole.log(a);\n";
+const APPLY_SUGGESTED_AFTER: &str = "const a = 4;\nconsole.log(a);\n";
 
 const NO_DEBUGGER_BEFORE: &str = "debugger;\n";
 const NO_DEBUGGER_AFTER: &str = "debugger;\n";
@@ -304,7 +304,7 @@ console.log(a);
 function _f() { arguments; }
 ";
 
-    let expected = "let a = 4;
+    let expected = "const a = 4;
 console.log(a);
 function _f() { arguments; }
 ";
@@ -1171,6 +1171,7 @@ fn include_files_in_symlinked_subdir() {
     let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
     let config = r#"{
+        "root": false,
         "files": {
             "includes": ["**/*.js"]
         }
@@ -1181,6 +1182,17 @@ fn include_files_in_symlinked_subdir() {
         .join("include_files_in_symlinked_subdir");
     let _ = remove_dir_all(&root_path);
     create_dir(&root_path).unwrap();
+    File::create(root_path.join("biome.json"))
+        .unwrap()
+        .write_all(
+            r#"{
+        "files": {
+            "includes": ["**/*.js"]
+        }
+    }"#
+            .as_bytes(),
+        )
+        .unwrap();
 
     let symlinked = root_path.join("symlinked");
     create_dir(&symlinked).unwrap();
@@ -2803,7 +2815,7 @@ fn lint_only_missing_group() {
         Args::from(["lint", "--only=noDebugger", file_path.as_str()].as_slice()),
     );
 
-    assert!(result.is_err(), "run_cli returned {result:?}");
+    assert!(result.is_ok(), "run_cli returned {result:?}");
 
     assert_cli_snapshot(SnapshotPayload::new(
         module_path!(),
@@ -3579,7 +3591,7 @@ console.log(a);
 function _f() { arguments; }
 ";
 
-    let expected = "let a = 4;
+    let expected = "const a = 4;
 console.log(a);
 function _f() { arguments; }
 ";
