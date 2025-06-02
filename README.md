@@ -36,6 +36,12 @@ over 200 MiB of disk space. That's why you should always use the Makefile's
 `update` target to update the vendored crates, as it applies the correct
 filters and automatically creates a git commit.
 
+## Updating Biome
+
+To update biome itself to a new version, use
+
+  BIOME_VERSION=<new-biome-version> make update
+
 ## Disclaimer for External Use
 
 If you want to use this packaging then feel free to do so under the rights
