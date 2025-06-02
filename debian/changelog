@@ -1,3 +1,13 @@
+proxmox-biome (2.0.0-beta.6-1) UNRELEASED; urgency=medium
+
+  * upgrade to upstream 2.0.0-beta.6 release
+
+  * adapt biome.json to new categorization
+
+  * update README.md with update instructions
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 02 Jun 2025 10:11:20 +0200
+
 proxmox-biome (2.0.0~beta.3-2) unstable; urgency=medium
 
   * add config that tries to follow the existing Proxmox Style guide, but with
