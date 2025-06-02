@@ -19,6 +19,7 @@
             "recommended": false,
             "complexity": {
                 "noAdjacentSpacesInRegex": "error",
+                "noCommaOperator": "error",
                 "noExtraBooleanCast": "error",
                 "noUselessCatch": "error",
                 "noUselessEscapeInRegex": "error",
@@ -28,8 +29,8 @@
                 "noUselessTernary": "warn",
                 "noUselessUndefinedInitialization": "error",
                 "noVoid": "error",
-                "noWith": "error",
                 "useLiteralKeys": "error",
+                "useNumericLiterals": "warn",
                 "useRegexLiterals": "error"
             },
             "correctness": {
@@ -51,21 +52,20 @@
                 "noUnsafeFinally": "error",
                 "noUnusedLabels": "error",
                 "noUnusedVariables": "error",
-                "useArrayLiterals": "warn",
                 "useIsNan": "error",
                 "useValidForDirection": "error",
+                "useValidTypeof": "error",
                 "useYield": "error"
             },
             "security": {
                 "noGlobalEval": "error"
             },
             "style": {
-                "noCommaOperator": "error",
+                "useArrayLiterals": "warn",
                 "noYodaExpression": "error",
                 "useBlockStatements": "error",
                 "useCollapsedElseIf": "warn",
-                "useConsistentBuiltinInstantiation": "error",
-                "useNumericLiterals": "warn"
+                "useConsistentBuiltinInstantiation": "error"
             },
             "suspicious": {
                 "noAsyncPromiseExecutor": "error",
@@ -96,9 +96,9 @@
                 "noSparseArray": "error",
                 "noTemplateCurlyInString": "error",
                 "noUnsafeNegation": "error",
+                "noWith": "error",
                 "useGetterReturn": "error",
-                "useGuardForIn": "error",
-                "useValidTypeof": "error"
+                "useGuardForIn": "error"
             }
         },
         "includes": ["**"]
