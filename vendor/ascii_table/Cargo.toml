@@ -12,8 +12,8 @@
 [package]
 edition = "2024"
 name = "ascii_table"
-version = "4.0.6"
-authors = ["Gerrit Viljoen <red.striker@protonmail.com>"]
+version = "4.0.7"
+authors = ["Gerrit Viljoen <red.striker@proton.me>"]
 build = false
 autolib = false
 autobins = false
@@ -41,10 +41,7 @@ allowlist = [
 
 [features]
 auto_table_width = ["termsize"]
-color_codes = [
-    "lazy_static",
-    "regex",
-]
+color_codes = ["regex"]
 wide_characters = ["unicode-width"]
 
 [lib]
@@ -54,10 +51,6 @@ path = "src/lib.rs"
 [[test]]
 name = "mod"
 path = "tests/mod.rs"
-
-[dependencies.lazy_static]
-version = "1"
-optional = true
 
 [dependencies.regex]
 version = "1"

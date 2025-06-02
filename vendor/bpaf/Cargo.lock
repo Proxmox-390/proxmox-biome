@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "bpaf"
-version = "0.9.19"
+version = "0.9.20"
 dependencies = [
  "bpaf_derive",
  "owo-colors",

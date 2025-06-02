@@ -1,3 +1,8 @@
+# v4.0.7 (2025-05-14)
+
+- Replaced the crate `lazy_static` with `std::sync::LazyLock`. This change is only for the `color_codes`
+  feature.
+
 # v4.0.6 (2025-02-25)
 
 - Bumped Rust edition to 2024.

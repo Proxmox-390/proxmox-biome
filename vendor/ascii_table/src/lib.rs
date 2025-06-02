@@ -46,13 +46,11 @@
 //! - `color_codes`: Correctly calculates the width of a string when terminal color codes are present
 //!   (like those from the `colorful` crate).
 //! - `wide_characters`: Correctly calculates the width of a string when wide characters are present
-//!   (like emoli's).
+//!   (like emoji's).
 
 #[cfg(test)]
-mod test;
+mod tests;
 
-#[cfg(feature = "color_codes")]
-use ::lazy_static::lazy_static;
 #[cfg(feature = "color_codes")]
 use ::regex::Regex;
 #[cfg(feature = "wide_characters")]
@@ -60,6 +58,8 @@ use ::unicode_width::UnicodeWidthStr;
 
 use ::std::collections::BTreeMap;
 use ::std::fmt::Display;
+#[cfg(feature = "color_codes")]
+use ::std::sync::LazyLock;
 
 const DEFAULT_WIDTH: usize = 100;
 const SE: &str = "┌";
@@ -73,6 +73,10 @@ const NWS: &str = "┤";
 const NEW: &str = "┴";
 const NEWS: &str = "┼";
 const EW: &str = "─";
+
+#[cfg(feature = "color_codes")]
+static COLOR_CODE_PARSER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("\u{1b}\\[([0-9]+;)*[0-9]+m").expect("Regex compilation error"));
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AsciiTable {
@@ -443,12 +447,6 @@ impl AsciiTable {
             result
         }
     }
-}
-
-#[cfg(feature = "color_codes")]
-lazy_static! {
-    static ref COLOR_CODE_PARSER: Regex =
-        Regex::new("\u{1b}\\[([0-9]+;)*[0-9]+m").expect("Regex compilation error");
 }
 
 #[derive(Clone, Debug)]

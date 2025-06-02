@@ -48,4 +48,4 @@ ascii_table.print(data);
 - `color_codes`: Correctly calculates the width of a string when terminal color codes are present
   (like those from the `colorful` crate).
 - `wide_characters`: Correctly calculates the width of a string when wide characters are present
-  (like emoli's).
+  (like emoji's).

@@ -1,6 +1,6 @@
-use ascii_table::{Align, AsciiTable, Column};
+use ::ascii_table::{Align, AsciiTable, Column};
 
-use std::fmt::Display;
+use ::std::fmt::Display;
 
 #[test]
 fn protect_public_api() {
