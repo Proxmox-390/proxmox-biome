@@ -1,3 +1,9 @@
+proxmox-biome (2.0.0-beta.6-2) trixie; urgency=medium
+
+  * re-build for Debian 13 Trixie based Proxmox releases.
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 16 Jun 2025 10:54:19 +0200
+
 proxmox-biome (2.0.0-beta.6-1) bookworm; urgency=medium
 
   * upgrade to upstream 2.0.0-beta.6 release
