@@ -49,8 +49,9 @@ $(DEB) $(DEB_DBG) &: $(BUILDDIR)
 	lintian $(DEB)
 
 .PHONY: upload
+upload: UPLOAD_DIST ?= $(DEB_DISTRIBUTION)
 upload: $(DEB) $(DEB_DBG)
-	tar cf - $(DEB) $(DEB_DBG) | ssh repoman@repo.proxmox.com -- upload --product devel --dist bookworm
+	tar cf - $(DEB) $(DEB_DBG) | ssh repoman@repo.proxmox.com -- upload --product devel --dist $(UPLOAD_DIST)
 
 dinstall: deb
 	dpkg -i $(DEB)
