@@ -890,7 +890,13 @@ export type TrailingCommas2 = "none" | "all";
 /**
  * Rule domains
  */
-export type RuleDomain = "react" | "test" | "solid" | "next" | "project";
+export type RuleDomain =
+	| "react"
+	| "test"
+	| "solid"
+	| "next"
+	| "vue"
+	| "project";
 export type RuleDomainValue = "all" | "none" | "recommended";
 export type SeverityOrGroup_for_A11y = GroupPlainConfiguration | A11y;
 export type SeverityOrGroup_for_Complexity =
@@ -1553,6 +1559,10 @@ export interface Nursery {
 	 */
 	noDestructuredProps?: RuleConfiguration_for_Null;
 	/**
+	 * Restrict the number of lines of code in a function.
+	 */
+	noExcessiveLinesPerFunction?: RuleConfiguration_for_NoExcessiveLinesPerFunctionOptions;
+	/**
 	 * Require Promise-like statements to be handled appropriately.
 	 */
 	noFloatingPromises?: RuleFixConfiguration_for_Null;
@@ -1560,6 +1570,10 @@ export interface Nursery {
 	 * Disallow the use of __dirname and __filename in the global scope.
 	 */
 	noGlobalDirnameFilename?: RuleFixConfiguration_for_Null;
+	/**
+	 * Disallow shorthand type conversions.
+	 */
+	noImplicitCoercion?: RuleFixConfiguration_for_Null;
 	/**
 	 * Prevent import cycles.
 	 */
@@ -1600,6 +1614,10 @@ export interface Nursery {
 	 * Prevents the use of the TypeScript directive @ts-ignore.
 	 */
 	noTsIgnore?: RuleFixConfiguration_for_Null;
+	/**
+	 * Disallow let or var variables that are read but never assigned.
+	 */
+	noUnassignedVariables?: RuleConfiguration_for_Null;
 	/**
 	 * Disallow unknown at-rules.
 	 */
@@ -1693,6 +1711,10 @@ export interface Nursery {
 	 */
 	useParseIntRadix?: RuleFixConfiguration_for_Null;
 	/**
+	 * Enforce marking members as readonly if they are never modified outside the constructor.
+	 */
+	useReadonlyClassProperties?: RuleFixConfiguration_for_ReadonlyClassPropertiesOptions;
+	/**
 	 * Enforce JSDoc comment lines to start with a single asterisk, except for the first one.
 	 */
 	useSingleJsDocAsterisk?: RuleFixConfiguration_for_Null;
@@ -1704,6 +1726,10 @@ export interface Nursery {
 	 * Require a description parameter for the Symbol().
 	 */
 	useSymbolDescription?: RuleConfiguration_for_Null;
+	/**
+	 * Disallow overload signatures that can be unified into a single signature.
+	 */
+	useUnifiedTypeSignature?: RuleFixConfiguration_for_Null;
 	/**
 	 * Prevent the usage of static string literal id attribute on elements.
 	 */
@@ -1834,7 +1860,7 @@ export interface Style {
 	/**
 	 * Disallow reassigning function parameters.
 	 */
-	noParameterAssign?: RuleConfiguration_for_Null;
+	noParameterAssign?: RuleConfiguration_for_NoParameterAssignOptions;
 	/**
 	 * Disallow the use of parameter properties in class constructors.
 	 */
@@ -2032,6 +2058,10 @@ export interface Style {
  * A list of rules that belong to this group
  */
 export interface Suspicious {
+	/**
+	 * Disallow the use of alert, confirm, and prompt.
+	 */
+	noAlert?: RuleConfiguration_for_Null;
 	/**
 	 * Use standard constants instead of approximated literals.
 	 */
@@ -2430,6 +2460,9 @@ export type RuleConfiguration_for_UseJsxKeyInIterableOptions =
 export type RuleConfiguration_for_NoBitwiseOperatorsOptions =
 	| RulePlainConfiguration
 	| RuleWithOptions_for_NoBitwiseOperatorsOptions;
+export type RuleConfiguration_for_NoExcessiveLinesPerFunctionOptions =
+	| RulePlainConfiguration
+	| RuleWithOptions_for_NoExcessiveLinesPerFunctionOptions;
 export type RuleConfiguration_for_NoRestrictedElementsOptions =
 	| RulePlainConfiguration
 	| RuleWithOptions_for_NoRestrictedElementsOptions;
@@ -2439,12 +2472,18 @@ export type RuleConfiguration_for_NoSecretsOptions =
 export type RuleFixConfiguration_for_UseConsistentObjectDefinitionOptions =
 	| RulePlainConfiguration
 	| RuleWithFixOptions_for_UseConsistentObjectDefinitionOptions;
+export type RuleFixConfiguration_for_ReadonlyClassPropertiesOptions =
+	| RulePlainConfiguration
+	| RuleWithFixOptions_for_ReadonlyClassPropertiesOptions;
 export type RuleFixConfiguration_for_UtilityClassSortingOptions =
 	| RulePlainConfiguration
 	| RuleWithFixOptions_for_UtilityClassSortingOptions;
 export type RuleFixConfiguration_for_NoBlankTargetOptions =
 	| RulePlainConfiguration
 	| RuleWithFixOptions_for_NoBlankTargetOptions;
+export type RuleConfiguration_for_NoParameterAssignOptions =
+	| RulePlainConfiguration
+	| RuleWithOptions_for_NoParameterAssignOptions;
 export type RuleConfiguration_for_RestrictedGlobalsOptions =
 	| RulePlainConfiguration
 	| RuleWithOptions_for_RestrictedGlobalsOptions;
@@ -2668,6 +2707,16 @@ export interface RuleWithOptions_for_NoBitwiseOperatorsOptions {
 	 */
 	options: NoBitwiseOperatorsOptions;
 }
+export interface RuleWithOptions_for_NoExcessiveLinesPerFunctionOptions {
+	/**
+	 * The severity of the emitted diagnostics by the rule
+	 */
+	level: RulePlainConfiguration;
+	/**
+	 * Rule's options
+	 */
+	options: NoExcessiveLinesPerFunctionOptions;
+}
 export interface RuleWithOptions_for_NoRestrictedElementsOptions {
 	/**
 	 * The severity of the emitted diagnostics by the rule
@@ -2702,6 +2751,20 @@ export interface RuleWithFixOptions_for_UseConsistentObjectDefinitionOptions {
 	 */
 	options: UseConsistentObjectDefinitionOptions;
 }
+export interface RuleWithFixOptions_for_ReadonlyClassPropertiesOptions {
+	/**
+	 * The kind of the code actions emitted by the rule
+	 */
+	fix?: FixKind;
+	/**
+	 * The severity of the emitted diagnostics by the rule
+	 */
+	level: RulePlainConfiguration;
+	/**
+	 * Rule's options
+	 */
+	options: ReadonlyClassPropertiesOptions;
+}
 export interface RuleWithFixOptions_for_UtilityClassSortingOptions {
 	/**
 	 * The kind of the code actions emitted by the rule
@@ -2729,6 +2792,16 @@ export interface RuleWithFixOptions_for_NoBlankTargetOptions {
 	 * Rule's options
 	 */
 	options: NoBlankTargetOptions;
+}
+export interface RuleWithOptions_for_NoParameterAssignOptions {
+	/**
+	 * The severity of the emitted diagnostics by the rule
+	 */
+	level: RulePlainConfiguration;
+	/**
+	 * Rule's options
+	 */
+	options: NoParameterAssignOptions;
 }
 export interface RuleWithOptions_for_RestrictedGlobalsOptions {
 	/**
@@ -2968,7 +3041,7 @@ export interface UndeclaredVariablesOptions {
 }
 export interface NoUnusedVariablesOptions {
 	/**
-	 * Whether to ignore unused variables from an object destructuring with a spread (i.e.: whether `a` and `b` in `const { a, b, ...rest } = obj` should be ignored by this rule).
+	 * Whether to ignore unused variables from an object destructuring with a spread.
 	 */
 	ignoreRestSiblings?: boolean;
 }
@@ -3014,6 +3087,20 @@ export interface NoBitwiseOperatorsOptions {
 	 */
 	allow: string[];
 }
+export interface NoExcessiveLinesPerFunctionOptions {
+	/**
+	 * The maximum number of lines allowed in a function body.
+	 */
+	maxLines?: number;
+	/**
+	 * When this options is set to `true`, blank lines in the function body are not counted towards the maximum line limit.
+	 */
+	skipBlankLines?: boolean;
+	/**
+	 * When this option is set to `true`, Immediately Invoked Function Expressions (IIFEs) are not checked for the maximum line limit.
+	 */
+	skipIifes?: boolean;
+}
 export interface NoRestrictedElementsOptions {
 	/**
 	 * Elements to restrict. Each key is the element name, and the value is the message to show when the element is used.
@@ -3031,6 +3118,15 @@ export interface UseConsistentObjectDefinitionOptions {
 	 * The preferred syntax to enforce.
 	 */
 	syntax?: ObjectPropertySyntax;
+}
+/**
+ * Rule's options
+ */
+export interface ReadonlyClassPropertiesOptions {
+	/**
+	 * When `true`, the keywords `public`, `protected`, and `private` are analyzed by the rule.
+	 */
+	checkAllProperties: boolean;
 }
 export interface UtilityClassSortingOptions {
 	/**
@@ -3051,6 +3147,15 @@ export interface NoBlankTargetOptions {
 	 * Whether `noreferrer` is allowed in addition to `noopener`.
 	 */
 	allowNoReferrer?: boolean;
+}
+/**
+ * Options for the rule `NoParameterAssign`
+ */
+export interface NoParameterAssignOptions {
+	/**
+	 * Whether to report an error when a dependency is listed in the dependencies array but isn't used. Defaults to `allow`.
+	 */
+	propertyAssignment?: PropertyAssignmentMode;
 }
 /**
  * Options for the rule `noRestrictedGlobals`.
@@ -3196,6 +3301,10 @@ For example, for React's `useRef()` hook the value would be `true`, while for `u
 }
 export type CustomRestrictedElements = Record<string, string>;
 export type ObjectPropertySyntax = "explicit" | "shorthand";
+/**
+ * Specifies whether property assignments on function parameters are allowed or denied.
+ */
+export type PropertyAssignmentMode = "allow" | "deny";
 export type CustomRestrictedImport = string | CustomRestrictedImportOptions;
 export type CustomRestrictedType = string | CustomRestrictedTypeOptions;
 export type ConsistentArrayType = "shorthand" | "generic";
@@ -3509,8 +3618,10 @@ export type Category =
 	| "lint/nursery/noDestructuredProps"
 	| "lint/nursery/noDoneCallback"
 	| "lint/nursery/noDuplicateAtImportRules"
+	| "lint/nursery/noExcessiveLinesPerFunction"
 	| "lint/nursery/noFloatingPromises"
 	| "lint/nursery/noGlobalDirnameFilename"
+	| "lint/nursery/noImplicitCoercion"
 	| "lint/nursery/noImportCycles"
 	| "lint/nursery/noImportantInKeyframe"
 	| "lint/nursery/noImportantStyles"
@@ -3528,6 +3639,7 @@ export type Category =
 	| "lint/nursery/noShadow"
 	| "lint/nursery/noShorthandPropertyOverrides"
 	| "lint/nursery/noTsIgnore"
+	| "lint/nursery/noUnassignedVariables"
 	| "lint/nursery/noUndeclaredDependencies"
 	| "lint/nursery/noUnknownAtRule"
 	| "lint/nursery/noUnknownFunction"
@@ -3562,10 +3674,12 @@ export type Category =
 	| "lint/nursery/useNumericSeparators"
 	| "lint/nursery/useObjectSpread"
 	| "lint/nursery/useParseIntRadix"
+	| "lint/nursery/useReadonlyClassProperties"
 	| "lint/nursery/useSingleJsDocAsterisk"
 	| "lint/nursery/useSortedClasses"
 	| "lint/nursery/useSortedProperties"
 	| "lint/nursery/useSymbolDescription"
+	| "lint/nursery/useUnifiedTypeSignature"
 	| "lint/nursery/useUniqueElementIds"
 	| "lint/performance/noAccumulatingSpread"
 	| "lint/performance/noBarrelFile"
@@ -3642,6 +3756,7 @@ export type Category =
 	| "lint/style/useThrowNewError"
 	| "lint/style/useThrowOnlyError"
 	| "lint/style/useTrimStartEnd"
+	| "lint/suspicious/noAlert"
 	| "lint/suspicious/noApproximativeNumericConstant"
 	| "lint/suspicious/noArrayIndexKey"
 	| "lint/suspicious/noAssignInExpressions"
@@ -3889,7 +4004,7 @@ export interface OpenProjectResult {
 	 */
 	scanKind: ScanKind;
 }
-export type ScanKind = "none" | "knownFiles" | "project";
+export type ScanKind = "noScanner" | "knownFiles" | "project";
 export interface OpenFileParams {
 	content: FileContent;
 	documentFileSource?: DocumentFileSource;
@@ -3990,6 +4105,9 @@ export interface GetSyntaxTreeResult {
 	ast: string;
 	cst: string;
 }
+export interface FileExitsParams {
+	filePath: BiomePath;
+}
 export interface CheckFileSizeParams {
 	path: BiomePath;
 	projectKey: ProjectKey;
@@ -4046,6 +4164,7 @@ export interface PullDiagnosticsResult {
 	skippedDiagnostics: number;
 }
 export interface PullActionsParams {
+	categories?: RuleCategories;
 	enabledRules?: RuleCode[];
 	only?: RuleCode[];
 	path: BiomePath;
@@ -4236,6 +4355,7 @@ export interface Workspace {
 	changeFile(params: ChangeFileParams): Promise<void>;
 	closeFile(params: CloseFileParams): Promise<void>;
 	getSyntaxTree(params: GetSyntaxTreeParams): Promise<GetSyntaxTreeResult>;
+	fileExists(params: FileExitsParams): Promise<boolean>;
 	checkFileSize(params: CheckFileSizeParams): Promise<CheckFileSizeResult>;
 	getFileContent(params: GetFileContentParams): Promise<string>;
 	getControlFlowGraph(params: GetControlFlowGraphParams): Promise<string>;
@@ -4279,6 +4399,9 @@ export function createWorkspace(transport: Transport): Workspace {
 		},
 		getSyntaxTree(params) {
 			return transport.request("biome/get_syntax_tree", params);
+		},
+		fileExists(params) {
+			return transport.request("biome/file_exists", params);
 		},
 		checkFileSize(params) {
 			return transport.request("biome/check_file_size", params);
