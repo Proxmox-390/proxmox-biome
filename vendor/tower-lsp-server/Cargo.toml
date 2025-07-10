@@ -10,10 +10,10 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2021"
-rust-version = "1.77"
+edition = "2024"
+rust-version = "1.85"
 name = "tower-lsp-server"
-version = "0.21.1"
+version = "0.22.0"
 authors = ["Eyal Kalderon <ebkalderon@gmail.com>"]
 build = false
 exclude = ["FEATURES.md"]
@@ -91,6 +91,9 @@ version = "0.97"
 [dependencies.memchr]
 version = "2"
 
+[dependencies.percent-encoding]
+version = "2.3.1"
+
 [dependencies.serde]
 version = "1"
 features = ["derive"]
@@ -116,7 +119,7 @@ default-features = false
 version = "0.1"
 
 [dev-dependencies.async-tungstenite]
-version = "0.28"
+version = "0.29"
 features = ["tokio-runtime"]
 
 [dev-dependencies.tokio]
@@ -136,6 +139,24 @@ features = ["compat"]
 [dev-dependencies.tracing-subscriber]
 version = "0.3"
 
-[dev-dependencies.ws_stream_tungstenite]
-version = "0.14"
-features = ["tokio_io"]
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+wildcard_imports = "allow"
+
+[lints.clippy.nursery]
+level = "warn"
+priority = -1
+
+[lints.clippy.pedantic]
+level = "warn"
+priority = -1
+
+[lints.rust]
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.rustdoc]
+all = "warn"

@@ -11,6 +11,10 @@ fn main() {
     let target_family = env::var("CARGO_CFG_TARGET_FAMILY").expect("target_family not defined!");
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("target_arch not defined!");
 
+    if target_family != "windows" {
+        build.flag("-Wno-error=date-time");
+    }
+
     if env::var_os("CARGO_FEATURE_OVERRIDE").is_some() {
         // Overriding malloc is only available on windows in shared mode, but we
         // only ever build a static lib.
@@ -62,5 +66,15 @@ fn main() {
         // while some use libatomic.a, and others use libatomic_ops.a.
         let atomic_name = env::var("DEP_ATOMIC").unwrap_or("atomic".to_owned());
         println!("cargo:rustc-link-lib={}", atomic_name);
+    }
+
+    // Link with libs needed on Windows
+    if target_os == "windows" {
+        // https://github.com/microsoft/mimalloc/blob/af21001f7a65eafb8fb16460b018ebf9d75e2ad8/CMakeLists.txt#L487
+        let libs = ["psapi", "shell32", "user32", "advapi32", "bcrypt"];
+
+        for lib in libs {
+            println!("cargo:rustc-link-lib={}", lib);
+        }
     }
 }

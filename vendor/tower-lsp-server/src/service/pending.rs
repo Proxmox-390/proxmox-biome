@@ -4,7 +4,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::future::Future;
 use std::sync::Arc;
 
-use dashmap::{mapref::entry::Entry, DashMap};
+use dashmap::{DashMap, mapref::entry::Entry};
 use futures::future::{self, Either};
 use tracing::{debug, info};
 
@@ -17,7 +17,7 @@ pub struct Pending(Arc<DashMap<Id, future::AbortHandle>>);
 impl Pending {
     /// Creates a new pending server requests map.
     pub fn new() -> Self {
-        Pending(Arc::new(DashMap::new()))
+        Self(Arc::new(DashMap::new()))
     }
 
     /// Executes the given async request handler, keyed by the given request ID.
@@ -41,11 +41,9 @@ impl Pending {
                 let abort_result = handler_fut.await;
                 requests.remove(&id); // Remove abort handle now to avoid double cancellation.
 
-                if let Ok(handler_result) = abort_result {
-                    handler_result
-                } else {
+                abort_result.unwrap_or_else(|_| {
                     Ok(Some(Response::from_error(id, Error::request_cancelled())))
-                }
+                })
             })
         } else {
             Either::Right(async { Ok(Some(Response::from_error(id, Error::invalid_request()))) })
