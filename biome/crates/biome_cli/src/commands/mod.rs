@@ -441,7 +441,7 @@ pub enum BiomeCommand {
     /// interpret backticks as command invocations. To avoid this, it's best to
     /// put single quotes around your Grit queries.
     ///
-    /// ## Example
+    /// ### Example
     ///
     /// ```shell
     /// biome search '`console.log($message)`' # find all `console.log` invocations
@@ -494,7 +494,7 @@ pub enum BiomeCommand {
 
     /// Shows documentation of various aspects of the CLI.
     ///
-    /// ## Examples
+    /// ### Examples
     ///
     /// ```shell
     /// biome explain noDebugger
@@ -898,9 +898,16 @@ pub(crate) trait CommandRunner: Sized {
 
         let open_project_result = workspace.open_project(params)?;
 
-        let scan_kind = get_forced_scan_kind(&execution).unwrap_or({
-            if open_project_result.scan_kind == ScanKind::None && configuration.use_ignore_file() {
-                ScanKind::KnownFiles
+        let scan_kind = get_forced_scan_kind(&execution, &configuration).unwrap_or({
+            if open_project_result.scan_kind == ScanKind::NoScanner {
+                // If we're here, it means we're executing `check`, `lint` or `ci`
+                // and the linter is disabled or no projects rules have been enabled.
+                // We scan known files if the configuration is a root or if the VCS integration is enabled
+                if configuration.is_root() || configuration.use_ignore_file() {
+                    ScanKind::KnownFiles
+                } else {
+                    ScanKind::NoScanner
+                }
             } else {
                 open_project_result.scan_kind
             }

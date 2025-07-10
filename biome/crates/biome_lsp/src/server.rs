@@ -1,4 +1,4 @@
-use crate::capabilities::server_capabilities;
+use crate::capabilities::{DEFAULT_CODE_ACTION_CAPABILITIES, server_capabilities};
 use crate::diagnostics::{LspError, handle_lsp_error};
 use crate::requests::syntax_tree::{SYNTAX_TREE_REQUEST, SyntaxTreePayload};
 use crate::session::{
@@ -11,7 +11,7 @@ use biome_diagnostics::panic::PanicError;
 use biome_fs::{ConfigName, MemoryFileSystem, OsFileSystem};
 use biome_resolver::FsWithResolverProxy;
 use biome_service::workspace::{
-    CloseProjectParams, OpenProjectParams, RageEntry, RageParams, RageResult,
+    CloseProjectParams, OpenProjectParams, RageEntry, RageParams, RageResult, ScanKind,
     ServiceDataNotification,
 };
 use biome_service::{WatcherInstruction, WorkspaceServer};
@@ -30,7 +30,7 @@ use tokio::task::spawn_blocking;
 use tower_lsp_server::jsonrpc::Result as LspResult;
 use tower_lsp_server::{ClientSocket, UriExt, lsp_types::*};
 use tower_lsp_server::{LanguageServer, LspService, Server};
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 pub struct LSPServer {
     pub(crate) session: SessionHandle,
@@ -222,18 +222,25 @@ impl LSPServer {
             },
         );
 
-        let rename = {
-            let config = self.session.extension_settings.read().ok();
-            config.is_some_and(|x| x.rename_enabled())
-        };
-
+        let f = self.session.is_linting_and_formatting_disabled();
+        debug!("Requires configuration: {f}");
         capabilities.add_capability(
-            "biome_rename",
-            "textDocument/rename",
-            if rename {
-                CapabilityStatus::Enable(None)
-            } else {
+            "biome_code_action",
+            "textDocument/codeAction",
+            if self.session.is_linting_and_formatting_disabled() {
                 CapabilityStatus::Disable
+            } else {
+                CapabilityStatus::Enable(Some(json!(CodeActionProviderCapability::from(
+                    CodeActionOptions {
+                        code_action_kinds: Some(
+                            DEFAULT_CODE_ACTION_CAPABILITIES
+                                .iter()
+                                .map(|item| CodeActionKind::from(*item))
+                                .collect::<Vec<_>>(),
+                        ),
+                        ..Default::default()
+                    }
+                ))))
             },
         );
 
@@ -418,11 +425,16 @@ impl LanguageServer for LSPServer {
 
                 match result {
                     Ok(result) => {
+                        let scan_kind = if result.scan_kind.is_none() {
+                            ScanKind::KnownFiles
+                        } else {
+                            result.scan_kind
+                        };
                         self.session
                             .insert_and_scan_project(
                                 result.project_key,
                                 project_path.clone(),
-                                result.scan_kind,
+                                scan_kind,
                             )
                             .await;
 
@@ -477,25 +489,6 @@ impl LanguageServer for LSPServer {
         });
 
         self.map_op_error(result).await
-    }
-
-    async fn rename(&self, params: RenameParams) -> LspResult<Option<WorkspaceEdit>> {
-        biome_diagnostics::panic::catch_unwind(move || {
-            let rename_enabled = self
-                .session
-                .extension_settings
-                .read()
-                .ok()
-                .and_then(|config| config.settings.rename)
-                .unwrap_or(false);
-
-            if rename_enabled {
-                handlers::rename::rename(&self.session, params).map_err(into_lsp_error)
-            } else {
-                Ok(None)
-            }
-        })
-        .map_err(into_lsp_error)?
     }
 }
 
@@ -669,6 +662,7 @@ impl ServerFactory {
         workspace_method!(builder, scan_project_folder);
         workspace_method!(builder, close_project);
         workspace_method!(builder, open_file);
+        workspace_method!(builder, file_exists);
         workspace_method!(builder, get_syntax_tree);
         workspace_method!(builder, get_control_flow_graph);
         workspace_method!(builder, get_formatter_ir);
