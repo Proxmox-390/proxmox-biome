@@ -127,6 +127,7 @@
             "Dom7",
             "Proxmox",
             "eslint",
+            "ngettext",
             "gettext"
         ]
     }
