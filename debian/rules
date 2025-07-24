@@ -14,4 +14,4 @@ override_dh_autoclean:
 	dh_autoclean
 
 override_dh_auto_build:
-	BIOME_VERSION=0.0.1 cargo build --bin biome --release
+	BIOME_VERSION="$(DEB_VERSION_UPSTREAM)" cargo build --bin biome --release
