@@ -128,7 +128,9 @@
             "Proxmox",
             "eslint",
             "ngettext",
-            "gettext"
+            "gettext",
+            "pgettext",
+            "npgettext"
         ]
     }
 }
