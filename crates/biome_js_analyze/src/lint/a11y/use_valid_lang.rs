@@ -1,10 +1,11 @@
 use biome_analyze::context::RuleContext;
 use biome_analyze::{Ast, Rule, RuleDiagnostic, RuleSource, declare_lint_rule};
-use biome_aria_metadata::{is_valid_country, is_valid_language};
+use biome_aria_metadata::{is_valid_country, is_valid_language, is_valid_script};
 use biome_console::markup;
 use biome_diagnostics::Severity;
 use biome_js_syntax::jsx_ext::AnyJsxElement;
 use biome_rowan::{AstNode, TextRange};
+use biome_rule_options::use_valid_lang::UseValidLangOptions;
 declare_lint_rule! {
     /// Ensure that the attribute passed to the `lang` attribute is a correct ISO language and/or country.
     ///
@@ -42,6 +43,7 @@ declare_lint_rule! {
 enum InvalidKind {
     Language,
     Country,
+    Script,
     Value,
 }
 
@@ -54,7 +56,7 @@ impl Rule for UseValidLang {
     type Query = Ast<AnyJsxElement>;
     type State = UseValidLangState;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = UseValidLangOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
@@ -65,27 +67,64 @@ impl Rule for UseValidLang {
             let attribute_static_value = attribute_value.as_static_value()?;
             let attribute_text = attribute_static_value.text();
             let mut split_value = attribute_text.split('-');
-            match (split_value.next(), split_value.next()) {
-                (Some(language), Some(country)) => {
-                    if !is_valid_language(language) {
+            match (split_value.next(), split_value.next(), split_value.next()) {
+                (Some(language), Some(script), Some(country)) => {
+                    if split_value.next().is_some() {
+                        return Some(UseValidLangState {
+                            attribute_range: attribute_value.range(),
+                            invalid_kind: InvalidKind::Value,
+                        });
+                    } else if !is_valid_language(language) {
                         return Some(UseValidLangState {
                             attribute_range: attribute_value.range(),
                             invalid_kind: InvalidKind::Language,
+                        });
+                    } else if !is_valid_script(script) {
+                        return Some(UseValidLangState {
+                            attribute_range: attribute_value.range(),
+                            invalid_kind: InvalidKind::Script,
                         });
                     } else if !is_valid_country(country) {
                         return Some(UseValidLangState {
                             attribute_range: attribute_value.range(),
                             invalid_kind: InvalidKind::Country,
                         });
-                    } else if split_value.next().is_some() {
-                        return Some(UseValidLangState {
-                            attribute_range: attribute_value.range(),
-                            invalid_kind: InvalidKind::Value,
-                        });
                     }
                 }
 
-                (Some(language), None) => {
+                (Some(language), Some(script_or_country), None) => {
+                    if !is_valid_language(language) {
+                        return Some(UseValidLangState {
+                            attribute_range: attribute_value.range(),
+                            invalid_kind: InvalidKind::Language,
+                        });
+                    } else if !is_valid_script(script_or_country)
+                        && !is_valid_country(script_or_country)
+                    {
+                        match script_or_country.len() {
+                            4 => {
+                                return Some(UseValidLangState {
+                                    attribute_range: attribute_value.range(),
+                                    invalid_kind: InvalidKind::Script,
+                                });
+                            }
+                            2 | 3 => {
+                                return Some(UseValidLangState {
+                                    attribute_range: attribute_value.range(),
+                                    invalid_kind: InvalidKind::Country,
+                                });
+                            }
+                            _ => {
+                                return Some(UseValidLangState {
+                                    attribute_range: attribute_value.range(),
+                                    invalid_kind: InvalidKind::Value,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                (Some(language), None, None) => {
                     if !is_valid_language(language) {
                         return Some(UseValidLangState {
                             attribute_range: attribute_value.range(),
@@ -128,6 +167,16 @@ impl Rule for UseValidLang {
                 };
 
                 diagnostic.footer_list("Some of valid countries:", countries)
+            }
+            InvalidKind::Script => {
+                let scripts = biome_aria_metadata::scripts();
+                let scripts = if scripts.len() > 15 {
+                    &scripts[..15]
+                } else {
+                    scripts
+                };
+
+                diagnostic.footer_list("Some of valid scripts:", scripts)
             }
             InvalidKind::Value => diagnostic,
         };

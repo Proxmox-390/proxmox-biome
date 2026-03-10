@@ -6,6 +6,7 @@ use biome_console::markup;
 use biome_diagnostics::Severity;
 use biome_js_syntax::{JsxAttribute, JsxAttributeList, jsx_ext::AnyJsxElement};
 use biome_rowan::{AstNode, BatchMutationExt};
+use biome_rule_options::no_access_key::NoAccessKeyOptions;
 
 declare_lint_rule! {
     /// Enforce that the `accessKey` attribute is not used on any HTML element.
@@ -51,7 +52,7 @@ impl Rule for NoAccessKey {
     type Query = Ast<JsxAttribute>;
     type State = ();
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoAccessKeyOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
@@ -85,7 +86,7 @@ impl Rule for NoAccessKey {
                 node.syntax().text_trimmed_range(),
                 markup! {
                     "Avoid the "<Emphasis>"accessKey"</Emphasis>" attribute to reduce inconsistencies between \
-                    keyboard shortcuts and screen reader keyboard comments."
+                    keyboard shortcuts and screen reader keyboard commands."
                 },
             ).note(
                 markup! {

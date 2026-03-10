@@ -1,5 +1,79 @@
 # @biomejs/backend-jsonrpc
 
+## 2.0.43
+
+## 2.0.42
+
+## 2.0.41
+
+## 2.0.40
+
+## 2.0.39
+
+## 2.0.38
+
+## 2.0.37
+
+## 2.0.36
+
+## 2.0.35
+
+## 2.0.34
+
+## 2.0.33
+
+## 2.0.32
+
+## 2.0.31
+
+## 2.0.30
+
+## 2.0.29
+
+## 2.0.28
+
+## 2.0.27
+
+## 2.0.26
+
+## 2.0.25
+
+## 2.0.24
+
+## 2.0.23
+
+## 2.0.22
+
+## 2.0.21
+
+## 2.0.20
+
+## 2.0.19
+
+## 2.0.18
+
+## 2.0.17
+
+## 2.0.16
+
+## 2.0.15
+
+## 2.0.14
+
+## 2.0.13
+
+## 2.0.12
+
+## 2.0.11
+
+## 2.0.10
+
+## 2.0.9
+
+## 2.0.8
+
+## 2.0.7
+
 ## 2.0.6
 
 ## 2.0.5
@@ -16,4 +90,4 @@
 
 ### Major Changes
 
-- [`9d5d95f`](https://github.com/biomejs/biome/commit/9d5d95fffd5734522c8911db18c6d16ee6a96756) Thanks [@arendjr](https://github.com/arendjr)! - Made the package compatibile with the new Biome APIs.
+- [`9d5d95f`](https://github.com/biomejs/biome/commit/9d5d95fffd5734522c8911db18c6d16ee6a96756) Thanks [@arendjr](https://github.com/arendjr)! - Made the package compatible with the new Biome APIs.

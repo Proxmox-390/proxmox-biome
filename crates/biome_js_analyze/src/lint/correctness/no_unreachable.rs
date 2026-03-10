@@ -14,6 +14,7 @@ use biome_js_syntax::{
     JsTryFinallyStatement, JsTryStatement, JsVariableStatement, JsWhileStatement, TextRange,
 };
 use biome_rowan::{AstNode, NodeOrToken, declare_node_union};
+use biome_rule_options::no_unreachable::NoUnreachableOptions;
 use roaring::bitmap::RoaringBitmap;
 use rustc_hash::FxHashMap;
 
@@ -61,7 +62,7 @@ impl Rule for NoUnreachable {
     type Query = ControlFlowGraph;
     type State = UnreachableRange;
     type Signals = UnreachableRanges;
-    type Options = ();
+    type Options = NoUnreachableOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let mut signals = UnreachableRanges::new();
@@ -222,11 +223,11 @@ fn exceeds_complexity_threshold(cfg: &JsControlFlowGraph) -> bool {
         let mut cleanup_handlers = NonZeroU32::new(block.cleanup_handlers.len() as u32);
 
         for inst in &block.instructions {
-            if has_side_effects(inst) {
-                if let Some(handlers) = exception_handlers.take() {
-                    edges += handlers.get();
-                    conditionals += 1;
-                }
+            if has_side_effects(inst)
+                && let Some(handlers) = exception_handlers.take()
+            {
+                edges += handlers.get();
+                conditionals += 1;
             }
 
             match inst.kind {
@@ -296,10 +297,10 @@ fn analyze_simple(cfg: &JsControlFlowGraph, signals: &mut UnreachableRanges) {
                 // If this block has a pending exception edge, create an
                 // additional path diverging towards the corresponding
                 // catch or finally block
-                if let Some((handler, handlers)) = exception_handlers.take() {
-                    if reachable_blocks.insert(handler.target.index()) {
-                        queue.push_back((handler.target, find_catch_handlers(handlers)));
-                    }
+                if let Some((handler, handlers)) = exception_handlers.take()
+                    && reachable_blocks.insert(handler.target.index())
+                {
+                    queue.push_back((handler.target, find_catch_handlers(handlers)));
                 }
             }
 
@@ -315,10 +316,10 @@ fn analyze_simple(cfg: &JsControlFlowGraph, signals: &mut UnreachableRanges) {
                         // handlers, otherwise return from the function
                         let handlers = handlers.and_then(<[_]>::split_first);
 
-                        if let Some((handler, handlers)) = handlers {
-                            if reachable_blocks.insert(handler.target.index()) {
-                                queue.push_back((handler.target, Some(handlers)));
-                            }
+                        if let Some((handler, handlers)) = handlers
+                            && reachable_blocks.insert(handler.target.index())
+                        {
+                            queue.push_back((handler.target, Some(handlers)));
                         }
                     }
 
@@ -333,10 +334,10 @@ fn analyze_simple(cfg: &JsControlFlowGraph, signals: &mut UnreachableRanges) {
                     }
                 }
                 InstructionKind::Return => {
-                    if let Some((handler, handlers)) = block.cleanup_handlers.split_first() {
-                        if reachable_blocks.insert(handler.target.index()) {
-                            queue.push_back((handler.target, Some(handlers)));
-                        }
+                    if let Some((handler, handlers)) = block.cleanup_handlers.split_first()
+                        && reachable_blocks.insert(handler.target.index())
+                    {
+                        queue.push_back((handler.target, Some(handlers)));
                     }
 
                     has_terminator = true;
@@ -373,7 +374,7 @@ fn analyze_fine(cfg: &JsControlFlowGraph, signals: &mut UnreachableRanges) {
     'blocks: for (block_id, block) in cfg.block_id_iter() {
         match block_paths.get(&block_id) {
             // Block has incoming paths, but may be unreachable if they all
-            // have a dominating terminator intruction
+            // have a dominating terminator instruction
             Some(paths) => {
                 let mut terminators = Vec::new();
                 for path in paths {
@@ -421,10 +422,20 @@ struct PathState<'cfg> {
     next_block: BlockId,
     /// Set of all blocks already visited on this path
     visited: RoaringBitmap,
-    /// Current terminating instruction for the path, if one was
-    /// encountered
-    terminator: Option<Option<PathTerminator>>,
+    /// Current terminating instruction for the path, if one was encountered.
+    /// See [`Terminator`] for the semantics of each `Option` level.
+    terminator: Option<Terminator>,
     exception_handlers: Option<&'cfg [ExceptionHandler]>,
+    /// The terminator that was active before entering a `finally` block via a
+    /// dead implicit jump (i.e. when `break`/`continue`/`return`/`throw`
+    /// precedes the implicit try-body-to-finally fall-through).
+    ///
+    /// `None` means we are not currently inside such a finally block.
+    /// `Some(t)` stores the `Option<Terminator>` that was in `self.terminator`
+    /// when the finally block was entered; it is restored by `finally_fallthrough`
+    /// so that code *after* the `try/finally` construct is still correctly seen
+    /// as unreachable.
+    pre_finally_terminator: Option<Option<Terminator>>,
 }
 
 /// Perform a simple reachability analysis on the control flow graph by
@@ -432,7 +443,7 @@ struct PathState<'cfg> {
 fn traverse_cfg(
     cfg: &JsControlFlowGraph,
     signals: &mut UnreachableRanges,
-) -> FxHashMap<BlockId, Vec<Option<Option<PathTerminator>>>> {
+) -> FxHashMap<BlockId, Vec<Option<Terminator>>> {
     let mut queue = VecDeque::new();
 
     queue.push_back(PathState {
@@ -440,10 +451,11 @@ fn traverse_cfg(
         visited: RoaringBitmap::new(),
         terminator: None,
         exception_handlers: None,
+        pre_finally_terminator: None,
     });
 
     // This maps holds a list of "path state", the active terminator
-    // intruction for each path that can reach the block
+    // instruction for each path that can reach the block
     let mut block_paths = FxHashMap::default();
 
     while let Some(mut path) = queue.pop_front() {
@@ -471,33 +483,58 @@ fn traverse_cfg(
                 // If this block has a pending exception edge, create an
                 // additional path diverging towards the corresponding
                 // catch or finally block
-                if let Some((handler, handlers)) = exception_handlers.take() {
-                    if !path.visited.contains(handler.target.index()) {
-                        queue.push_back(PathState {
-                            next_block: handler.target,
-                            visited: path.visited.clone(),
-                            terminator: path.terminator,
-                            exception_handlers: find_catch_handlers(handlers),
-                        });
-                    }
+                if let Some((handler, handlers)) = exception_handlers.take()
+                    && !path.visited.contains(handler.target.index())
+                {
+                    queue.push_back(PathState {
+                        next_block: handler.target,
+                        visited: path.visited.clone(),
+                        terminator: path.terminator,
+                        exception_handlers: find_catch_handlers(handlers),
+                        pre_finally_terminator: None,
+                    });
                 }
             }
 
             // If this block has already ended, immediately mark this instruction as unreachable
-            if let Some(terminator) = path.terminator.filter(|_| has_direct_terminator) {
-                if let Some(node) = &inst.node {
-                    signals.push(node, terminator);
-                }
+            if let Some(terminator) = path.terminator.filter(|_| has_direct_terminator)
+                && let Some(node) = &inst.node
+            {
+                signals.push(node, terminator);
             }
 
             match inst.kind {
                 InstructionKind::Statement => {}
                 InstructionKind::Jump {
                     conditional,
-                    block,
+                    block: jump_target,
                     finally_fallthrough,
                 } => {
-                    handle_jump(&mut queue, &path, block, finally_fallthrough);
+                    // If we are in dead code (has_direct_terminator) but the jump
+                    // target is a cleanup (finally) handler for this block, the finally
+                    // block is still reachable — it always runs before any early exit
+                    // (break/continue/return/throw). Clear the terminator so the finally
+                    // block is not incorrectly reported as unreachable. Store the
+                    // original terminator in `pre_finally_terminator` so it can be
+                    // restored when the finally block exits via `finally_fallthrough`.
+                    let (effective_terminator, pre_finally_terminator) = if has_direct_terminator
+                        && block
+                            .cleanup_handlers
+                            .iter()
+                            .any(|h| h.target == jump_target)
+                    {
+                        (None, Some(path.terminator))
+                    } else {
+                        (path.terminator, None)
+                    };
+                    handle_jump(
+                        &mut queue,
+                        &path,
+                        jump_target,
+                        finally_fallthrough,
+                        effective_terminator,
+                        pre_finally_terminator,
+                    );
 
                     // Jump is a terminator instruction if it's unconditional
                     if path.terminator.is_none() && !conditional {
@@ -564,12 +601,20 @@ fn find_catch_handlers(handlers: &[ExceptionHandler]) -> Option<&[ExceptionHandl
     }
 }
 
-/// Create an additional visitor path from a jump instruction and push it to the queue
+/// Create an additional visitor path from a jump instruction and push it to the queue.
+/// `effective_terminator` is the terminator to propagate to the target block; callers may
+/// pass `None` when the target is known to be reachable regardless of any prior terminator
+/// (e.g. an implicit jump from the end of a try body to its finally block).
+/// `pre_finally_terminator` should be set when `effective_terminator` was cleared to allow
+/// a finally block to appear reachable; it stores the original terminator so it can be
+/// restored when the finally block exits via `finally_fallthrough`.
 fn handle_jump<'cfg>(
     queue: &mut VecDeque<PathState<'cfg>>,
     path: &PathState<'cfg>,
     block: BlockId,
     finally_fallthrough: bool,
+    effective_terminator: Option<Terminator>,
+    pre_finally_terminator: Option<Option<Terminator>>,
 ) {
     // If this jump is exiting a finally clause and this path is visiting
     // an exception handlers chain
@@ -578,24 +623,53 @@ fn handle_jump<'cfg>(
         // handlers, otherwise return from the function
         let handlers = path.exception_handlers.and_then(<[_]>::split_first);
 
-        if let Some((handler, handlers)) = handlers {
-            if !path.visited.contains(handler.target.index()) {
-                queue.push_back(PathState {
-                    next_block: handler.target,
-                    visited: path.visited.clone(),
-                    terminator: path.terminator,
-                    exception_handlers: Some(handlers),
-                });
-            }
+        if let Some((handler, handlers)) = handlers
+            && !path.visited.contains(handler.target.index())
+        {
+            queue.push_back(PathState {
+                next_block: handler.target,
+                visited: path.visited.clone(),
+                terminator: path.terminator,
+                exception_handlers: Some(handlers),
+                pre_finally_terminator: None,
+            });
+        }
+    } else if finally_fallthrough {
+        // Exiting a finally block in the normal (non-exception) context.
+        // Determine the terminator to propagate past the try/finally:
+        // - If the finally block itself terminates (e.g. contains a `return`
+        //   or `throw`), prefer that as the most proximate cause.
+        // - Otherwise, if we entered finally via a dead implicit jump (the
+        //   try body had `break`/`continue`/`return`), restore the saved
+        //   pre-finally terminator so code after the try/finally is still
+        //   correctly seen as unreachable.
+        let continuation_terminator = path
+            .terminator
+            .or(path.pre_finally_terminator.unwrap_or(None));
+
+        if !path.visited.contains(block.index()) {
+            queue.push_back(PathState {
+                next_block: block,
+                visited: path.visited.clone(),
+                terminator: continuation_terminator,
+                exception_handlers: path.exception_handlers,
+                pre_finally_terminator: None,
+            });
         }
     } else if !path.visited.contains(block.index()) {
         // Push the jump target block to the queue if it hasn't
-        // been visited yet in this path
+        // been visited yet in this path.
+        // Propagate `pre_finally_terminator` from the current path so it
+        // survives across internal jumps inside a finally block (e.g. an
+        // if/else inside finally) and is available when the block exits via
+        // `finally_fallthrough`.
+        let effective_pre_finally = pre_finally_terminator.or(path.pre_finally_terminator);
         queue.push_back(PathState {
             next_block: block,
             visited: path.visited.clone(),
-            terminator: path.terminator,
+            terminator: effective_terminator,
             exception_handlers: path.exception_handlers,
+            pre_finally_terminator: effective_pre_finally,
         });
     }
 }
@@ -607,15 +681,16 @@ fn handle_return<'cfg>(
     path: &PathState<'cfg>,
     cleanup_handlers: &'cfg [ExceptionHandler],
 ) {
-    if let Some((handler, handlers)) = cleanup_handlers.split_first() {
-        if !path.visited.contains(handler.target.index()) {
-            queue.push_back(PathState {
-                next_block: handler.target,
-                visited: path.visited.clone(),
-                terminator: path.terminator,
-                exception_handlers: Some(handlers),
-            });
-        }
+    if let Some((handler, handlers)) = cleanup_handlers.split_first()
+        && !path.visited.contains(handler.target.index())
+    {
+        queue.push_back(PathState {
+            next_block: handler.target,
+            visited: path.visited.clone(),
+            terminator: path.terminator,
+            exception_handlers: Some(handlers),
+            pre_finally_terminator: None,
+        });
     }
 }
 
@@ -965,6 +1040,16 @@ pub struct UnreachableRange {
     text_trimmed_range: TextRange,
     terminators: Vec<PathTerminator>,
 }
+
+/// The terminator state of a path through the control flow graph.
+///
+/// Each level of `Option` carries distinct semantics:
+/// - Outer `Option`: `None` = the path has no terminator yet (code is still live);
+///   `Some(_)` = a terminating instruction has been encountered on this path.
+/// - Inner `Option<PathTerminator>`: `None` = the terminator has no associated
+///   syntax node (e.g. an implicit jump); `Some(pt)` = the terminator corresponds
+///   to a concrete syntax node that can be pointed to in a diagnostic.
+type Terminator = Option<PathTerminator>;
 
 #[derive(Debug, Clone, Copy)]
 struct PathTerminator {

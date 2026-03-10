@@ -6,6 +6,7 @@ use biome_console::markup;
 use biome_diagnostics::Severity;
 use biome_js_syntax::{JsCallExpression, JsLanguage, JsStaticMemberExpression};
 use biome_rowan::{AstNode, Language, SyntaxNode, SyntaxNodeOptionExt, TextRange, WalkEvent};
+use biome_rule_options::no_excessive_nested_test_suites::NoExcessiveNestedTestSuitesOptions;
 
 declare_lint_rule! {
     /// This rule enforces a maximum depth to nested `describe()` in test files.
@@ -67,7 +68,7 @@ impl Rule for NoExcessiveNestedTestSuites {
     type Query = NestedTest;
     type State = ();
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoExcessiveNestedTestSuitesOptions;
 
     fn run(_: &RuleContext<Self>) -> Self::Signals {
         Some(())
@@ -117,24 +118,24 @@ impl Visitor for NestedTestVisitor {
     ) {
         match event {
             WalkEvent::Enter(node) => {
-                if let Some(node) = JsCallExpression::cast_ref(node) {
-                    if let Ok(callee) = node.callee() {
-                        if callee.contains_describe_call() && !is_member(&node) {
-                            self.curr_count += 1;
-                            if self.curr_count == self.max_count + 1 {
-                                ctx.match_query(NestedTest(node.clone()));
-                            }
-                        }
+                if let Some(node) = JsCallExpression::cast_ref(node)
+                    && let Ok(callee) = node.callee()
+                    && callee.contains_describe_call()
+                    && !is_member(&node)
+                {
+                    self.curr_count += 1;
+                    if self.curr_count == self.max_count + 1 {
+                        ctx.match_query(NestedTest(node.clone()));
                     }
                 }
             }
             WalkEvent::Leave(node) => {
-                if let Some(node) = JsCallExpression::cast_ref(node) {
-                    if let Ok(callee) = node.callee() {
-                        if callee.contains_describe_call() && !is_member(&node) {
-                            self.curr_count -= 1;
-                        }
-                    }
+                if let Some(node) = JsCallExpression::cast_ref(node)
+                    && let Ok(callee) = node.callee()
+                    && callee.contains_describe_call()
+                    && !is_member(&node)
+                {
+                    self.curr_count -= 1;
                 }
             }
         }

@@ -14,6 +14,7 @@ use biome_js_syntax::{
     JsPropertyObjectMember, JsStringLiteralExpression, JsUnaryExpression, JsxAttribute, TextRange,
 };
 use biome_rowan::{AstNode, BatchMutationExt, declare_node_union};
+use biome_rule_options::no_positive_tabindex::NoPositiveTabindexOptions;
 
 declare_lint_rule! {
     /// Prevent the usage of positive integers on `tabIndex` property
@@ -100,7 +101,7 @@ impl Rule for NoPositiveTabindex {
     type Query = Semantic<NoPositiveTabindexQuery>;
     type State = TextRange;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoPositiveTabindexOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
@@ -190,10 +191,18 @@ impl Rule for NoPositiveTabindex {
         Some(JsRuleAction::new(
             ctx.metadata().action_category(ctx.category(), ctx.group()),
             ctx.metadata().applicability(),
-            markup! { "Replace the "<Emphasis>"tableIndex"</Emphasis>" prop value with 0." }
+            markup! { "Replace the "<Emphasis>"tabIndex"</Emphasis>" prop value with 0." }
                 .to_owned(),
             mutation,
         ))
+    }
+
+    fn text_range(ctx: &RuleContext<Self>, _state: &Self::State) -> Option<TextRange> {
+        if let NoPositiveTabindexQuery::AnyJsxElement(element) = ctx.query() {
+            Some(element.range())
+        } else {
+            None
+        }
     }
 }
 

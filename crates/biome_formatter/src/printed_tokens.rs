@@ -29,9 +29,16 @@ impl PrintedTokens {
         }
 
         let range = token.text_trimmed_range();
+        if range.is_empty() {
+            // Ignore zero-width tokens
+            return;
+        }
 
         if !self.offsets.insert(range.start()) {
-            panic!("You tried to print the token '{token:?}' twice, and this is not valid.");
+            panic!(
+                "You tried to print the token '{token:?}' twice, and this is not valid.\
+                \nYou may need to memoize the token if you are writing it to multiple buffers at the same time."
+            );
         }
     }
 
@@ -66,7 +73,13 @@ impl PrintedTokens {
         let mut offsets = self.offsets.clone();
 
         for token in root.descendants_tokens(Direction::Next) {
-            if !offsets.shift_remove(&token.text_trimmed_range().start()) {
+            let range = token.text_trimmed_range();
+            if range.is_empty() {
+                // Ignore zero-width tokens
+                continue;
+            }
+
+            if !offsets.shift_remove(&range.start()) {
                 panic!(
                     "token has not been seen by the formatter: {token:#?}.\
                         \nUse `format_replaced` if you want to replace a token from the formatted output.\

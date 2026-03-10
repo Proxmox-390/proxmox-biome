@@ -7,7 +7,11 @@ mod generated;
 mod grit;
 mod prelude;
 pub(crate) mod separated;
+mod trivia;
+mod verbatim;
 
+pub(crate) use crate::context::GritFormatContext;
+pub(crate) use crate::trivia::*;
 use biome_formatter::{
     CstFormatContext, Format, FormatLanguage, FormatResult, Formatted, Printed,
     comments::Comments,
@@ -18,8 +22,8 @@ use biome_formatter::{
 use biome_grit_syntax::{GritLanguage, GritSyntaxNode};
 use comments::GritCommentStyle;
 
-pub(crate) use crate::context::GritFormatContext;
-
+use crate::prelude::*;
+use crate::verbatim::format_suppressed_node;
 use biome_rowan::{AstNode, TextRange};
 use context::GritFormatOptions;
 use cst::FormatGritSyntaxNode;
@@ -33,7 +37,7 @@ pub fn format_node(
     options: GritFormatOptions,
     root: &GritSyntaxNode,
 ) -> FormatResult<Formatted<GritFormatContext>> {
-    biome_formatter::format_node(root, GritFormatLanguage::new(options))
+    biome_formatter::format_node(root, GritFormatLanguage::new(options), false)
 }
 
 /// Formats a range within a file, supported by Biome
@@ -75,7 +79,7 @@ where
 {
     // this is the method that actually start the formatting
     fn fmt(&self, node: &N, f: &mut GritFormatter) -> FormatResult<()> {
-        if self.is_suppressed(node, f) {
+        if self.is_suppressed(node, f) || self.is_global_suppressed(node, f) {
             return write!(f, [format_suppressed_node(node.syntax())]);
         }
 
@@ -90,6 +94,11 @@ where
     /// Returns `true` if the node has a suppression comment and should use the same formatting as in the source document.
     fn is_suppressed(&self, node: &N, f: &GritFormatter) -> bool {
         f.context().comments().is_suppressed(node.syntax())
+    }
+
+    /// Returns `true` if the node has a global suppression comment and should use the same formatting as in the source document.
+    fn is_global_suppressed(&self, node: &N, f: &GritFormatter) -> bool {
+        f.context().comments().is_global_suppressed(node.syntax())
     }
 
     /// Formats the [leading comments](biome_formatter::comments#leading-comments) of the node.
@@ -165,6 +174,7 @@ impl FormatLanguage for GritFormatLanguage {
         self,
         root: &biome_rowan::SyntaxNode<Self::SyntaxLanguage>,
         source_map: Option<biome_formatter::TransformSourceMap>,
+        _delegate_fmt_embedded_nodes: bool,
     ) -> Self::Context {
         let comments: Comments<GritLanguage> =
             Comments::from_node(root, &GritCommentStyle, source_map.as_ref());

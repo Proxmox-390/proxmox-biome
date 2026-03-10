@@ -23,7 +23,7 @@ impl Rule for RulesAll {
         let node = ctx.query();
 
         let name = node.name().ok()?;
-        let node_text = name.inner_string_text().ok()?;
+        let node_text = name.inner_string_text()?.ok()?;
         if node_text.text() == "all" {
             return Some(node.clone());
         }
@@ -58,10 +58,10 @@ impl Rule for RulesAll {
         } else {
             // Otherwise, the current node is the last member of the list.
             // Find a previous sibling token and remove it if found to keep as a valid JSON.
-            if let Some(SyntaxElement::Token(prev_token)) = node.syntax().prev_sibling_or_token() {
-                if prev_token.kind() == T![,] {
-                    mutation.remove_token(prev_token);
-                }
+            if let Some(SyntaxElement::Token(prev_token)) = node.syntax().prev_sibling_or_token()
+                && prev_token.kind() == T![,]
+            {
+                mutation.remove_token(prev_token);
             }
         }
 

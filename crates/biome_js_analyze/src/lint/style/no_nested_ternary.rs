@@ -5,6 +5,7 @@ use biome_console::markup;
 use biome_diagnostics::Severity;
 use biome_js_syntax::{AnyJsExpression, JsConditionalExpression};
 use biome_rowan::{AstNode, TextRange};
+use biome_rule_options::no_nested_ternary::NoNestedTernaryOptions;
 
 declare_lint_rule! {
     /// Disallow nested ternary expressions.
@@ -55,18 +56,18 @@ impl Rule for NoNestedTernary {
     type Query = Ast<JsConditionalExpression>;
     type State = TextRange;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoNestedTernaryOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
         let alternate = node.alternate().ok()?;
         let consequent = node.consequent().ok()?;
 
-        if let AnyJsExpression::JsConditionalExpression(expr) = consequent {
+        if let AnyJsExpression::JsConditionalExpression(expr) = consequent.omit_parentheses() {
             return Some(expr.range());
         }
 
-        if let AnyJsExpression::JsConditionalExpression(expr) = alternate {
+        if let AnyJsExpression::JsConditionalExpression(expr) = alternate.omit_parentheses() {
             return Some(expr.range());
         }
 

@@ -14,6 +14,7 @@ use biome_js_syntax::{
     JsThisExpression, JsVariableDeclaration, JsVariableDeclarator, JsVariableStatement, T,
 };
 use biome_rowan::{AstNode, AstSeparatedList, BatchMutationExt};
+use biome_rule_options::no_useless_this_alias::NoUselessThisAliasOptions;
 
 declare_lint_rule! {
     /// Disallow useless `this` aliasing.
@@ -65,7 +66,7 @@ impl Rule for NoUselessThisAlias {
     type Query = Semantic<JsVariableDeclarator>;
     type State = JsIdentifierBinding;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoUselessThisAliasOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let declarator = ctx.query();
@@ -88,6 +89,7 @@ impl Rule for NoUselessThisAlias {
         let this_scope = declarator
             .syntax()
             .ancestors()
+            .skip(1)
             .find_map(AnyJsControlFlowRoot::cast)?;
         for write in id.all_writes(model) {
             let assign = JsAssignmentExpression::cast(write.syntax().parent()?)?;
@@ -97,7 +99,7 @@ impl Rule for NoUselessThisAlias {
             }
             is_this_alias = true;
         }
-        // This cehck is useful when the loop is not executed (no write).
+        // This check is useful when the loop is not executed (no write).
         if !is_this_alias {
             return None;
         }
@@ -105,6 +107,7 @@ impl Rule for NoUselessThisAlias {
             let current_this_scope = reference
                 .syntax()
                 .ancestors()
+                .skip(1)
                 .filter(|x| !JsArrowFunctionExpression::can_cast(x.kind()))
                 .find_map(AnyJsControlFlowRoot::cast)?;
             if this_scope != current_this_scope {
@@ -137,6 +140,7 @@ impl Rule for NoUselessThisAlias {
         let var_decl = declarator
             .syntax()
             .ancestors()
+            .skip(1)
             .find_map(JsVariableDeclaration::cast)?;
         let mut mutation = ctx.root().begin();
         let this_expr = AnyJsExpression::from(make::js_this_expression(make::token(T![this])));
@@ -154,10 +158,10 @@ impl Rule for NoUselessThisAlias {
         }
         let var_declarator_list = var_decl.declarators();
         if var_declarator_list.len() == 1 {
-            if let Some(statement) = JsVariableStatement::cast(var_decl.syntax().parent()?) {
-                if statement.semicolon_token().is_some() {
-                    mutation.remove_token(statement.semicolon_token()?);
-                }
+            if let Some(statement) = JsVariableStatement::cast(var_decl.syntax().parent()?)
+                && statement.semicolon_token().is_some()
+            {
+                mutation.remove_token(statement.semicolon_token()?);
             }
             mutation.remove_node(var_decl);
         } else {

@@ -46,11 +46,9 @@ impl Format<CssFormatContext> for FormatCssBlockLike<'_> {
     fn fmt(&self, f: &mut Formatter<CssFormatContext>) -> FormatResult<()> {
         write!(f, [self.block.l_curly_token().format()])?;
 
-        let r_curly_token = self.block.r_curly_token()?;
-
         // When the list is empty, we still print a hard line to put the
         // closing curly on the next line.
-        if self.block.is_empty() {
+        if self.block.is_empty() || self.block.has_only_empty_declarations() {
             let comments = f.context().comments();
 
             let has_dangling_comments = comments.has_dangling_comments(self.block.syntax());
@@ -61,14 +59,13 @@ impl Format<CssFormatContext> for FormatCssBlockLike<'_> {
                     [format_dangling_comments(self.block.syntax()).with_block_indent()]
                 )?;
             } else {
-                write!(f, [soft_line_break()])?;
+                // we still need to write items because the block may have empty declarations
+                self.write_items(f)?;
+                write!(f, [hard_line_break()])?;
             }
         } else {
-            write!(
-                f,
-                [soft_block_indent(&format_with(|f| self.write_items(f)))]
-            )?;
+            write!(f, [block_indent(&format_with(|f| self.write_items(f)))])?;
         }
-        write!(f, [r_curly_token.format()])
+        write!(f, [self.block.r_curly_token().format()])
     }
 }

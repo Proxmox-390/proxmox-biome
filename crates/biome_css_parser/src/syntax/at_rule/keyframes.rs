@@ -10,7 +10,8 @@ use crate::syntax::css_modules::{
 use crate::syntax::parse_error::expected_non_css_wide_keyword_identifier;
 use crate::syntax::value::dimension::{is_at_percentage_dimension, parse_percentage_dimension};
 use crate::syntax::{
-    is_at_declaration, is_at_identifier, is_at_string, parse_custom_identifier, parse_string,
+    CssSyntaxFeatures, is_at_declaration, is_at_identifier, is_at_string, parse_custom_identifier,
+    parse_string,
 };
 use biome_css_syntax::CssSyntaxKind::*;
 use biome_css_syntax::{CssSyntaxKind, T};
@@ -106,7 +107,7 @@ fn parse_keyframes_scoped_name(p: &mut CssParser) -> ParsedSyntax {
 
     p.bump(T![:]);
 
-    if p.options().is_css_modules_disabled() {
+    if CssSyntaxFeatures::CssModules.is_unsupported(p) {
         // :local and :global are not standard CSS features
         // provide a hint on how to enable parsing of these pseudo-classes
         p.error(local_or_global_not_allowed(p, p.cur_range()));
@@ -226,33 +227,6 @@ impl ParseNodeList for KeyframesItemList {
         parsed_element: ParsedSyntax,
     ) -> RecoveryResult {
         parsed_element.or_recover(p, &KeyframesItemListParseRecovery, expected_keyframes_item)
-    }
-}
-
-struct KeyframesItemBlockParseRecovery;
-
-impl ParseRecovery for KeyframesItemBlockParseRecovery {
-    type Kind = CssSyntaxKind;
-    type Parser<'source> = CssParser<'source>;
-    const RECOVERED_KIND: Self::Kind = CSS_BOGUS_BLOCK;
-
-    fn is_at_recovered(&self, p: &mut Self::Parser<'_>) -> bool {
-        // We need to recover the contents of an invalid block for the following cases:
-        // We have a declaration block, but it lacks a '{' token:
-        //    @keyframes name {
-        //      from
-        //          color: red;
-        //      } <----- here it's a recover point for the keyframes item block.
-        //   }
-        //
-        //    @keyframes name {
-        //      from
-        //          color: red;
-        //      to <----- here it's a recover point for the next keyframes item. {
-        //          color: blue;
-        //      }
-        //   }
-        p.at(T!['}']) || is_at_keyframes_item_selector(p)
     }
 }
 

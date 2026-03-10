@@ -14,16 +14,18 @@ expression: tsconfig.valid.baseUrl.json
 ## Data structure
 
 TsConfigJson {
-    root: false,
-    path: "",
+    root: true,
+    path: "<PREFIX>/tsconfig/valid/tsconfig.valid.baseUrl.json",
     extends: None,
     compiler_options: CompilerOptions {
         base_url: Some(
-            "src",
+            "<PREFIX>/tsconfig/valid/src",
         ),
         paths: None,
         paths_base: "",
         type_roots: None,
+        jsx_factory: None,
+        jsx_fragment_factory: None,
     },
     references: [],
 }

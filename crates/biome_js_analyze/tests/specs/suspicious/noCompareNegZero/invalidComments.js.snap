@@ -1,11 +1,10 @@
 ---
 source: crates/biome_js_analyze/tests/spec_tests.rs
 expression: invalidComments.js
-snapshot_kind: text
 ---
 # Input
 ```js
--0 /** commnet **/ === 4;
+-0 /** comment **/ === 4;
 -0
 // comment
 === 4;
@@ -19,14 +18,14 @@ invalidComments.js:1:1 lint/suspicious/noCompareNegZero  FIXABLE  ━━━━�
 
   × Do not use the === operator to compare against -0.
   
-  > 1 │ -0 /** commnet **/ === 4;
+  > 1 │ -0 /** comment **/ === 4;
       │ ^^^^^^^^^^^^^^^^^^^^^^^^
     2 │ -0
     3 │ // comment
   
   i Safe fix: Replace -0 with 0
   
-    1 │ -0·/**·commnet·**/·===·4;
+    1 │ -0·/**·comment·**/·===·4;
       │ -                        
 
 ```
@@ -36,7 +35,7 @@ invalidComments.js:2:1 lint/suspicious/noCompareNegZero  FIXABLE  ━━━━�
 
   × Do not use the === operator to compare against -0.
   
-    1 │ -0 /** commnet **/ === 4;
+    1 │ -0 /** comment **/ === 4;
   > 2 │ -0
       │ ^^
   > 3 │ // comment

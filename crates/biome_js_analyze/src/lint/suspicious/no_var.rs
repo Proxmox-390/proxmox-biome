@@ -10,6 +10,7 @@ use biome_js_factory::make;
 use biome_js_syntax::{
     AnyJsVariableDeclaration, JsModule, JsScript, JsSyntaxKind, TsGlobalDeclaration,
 };
+use biome_rule_options::no_var::NoVarOptions;
 
 use crate::lint::style::use_const::ConstBindings;
 use biome_rowan::{AstNode, BatchMutationExt};
@@ -50,7 +51,7 @@ impl Rule for NoVar {
     type Query = Semantic<AnyJsVariableDeclaration>;
     type State = ();
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoVarOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let declaration = ctx.query();
@@ -58,6 +59,7 @@ impl Rule for NoVar {
             let ts_global_declaratio = &declaration
                 .syntax()
                 .ancestors()
+                .skip(1)
                 .find_map(TsGlobalDeclaration::cast);
 
             if ts_global_declaratio.is_some() {

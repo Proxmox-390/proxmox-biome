@@ -5,7 +5,7 @@
 //!
 //! This is a simple wrapper around the `rowan` crate which does most of the heavy lifting and is language agnostic.
 
-use crate::{CssRoot, CssSyntaxKind};
+use crate::{AnyCssRoot, CssSyntaxKind};
 use biome_rowan::Language;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -13,7 +13,7 @@ pub struct CssLanguage;
 
 impl Language for CssLanguage {
     type Kind = CssSyntaxKind;
-    type Root = CssRoot;
+    type Root = AnyCssRoot;
 }
 
 pub type CssSyntaxNode = biome_rowan::SyntaxNode<CssLanguage>;
@@ -22,3 +22,4 @@ pub type CssSyntaxElement = biome_rowan::SyntaxElement<CssLanguage>;
 pub type CssSyntaxNodeChildren = biome_rowan::SyntaxNodeChildren<CssLanguage>;
 pub type CssSyntaxElementChildren = biome_rowan::SyntaxElementChildren<CssLanguage>;
 pub type CssSyntaxList = biome_rowan::SyntaxList<CssLanguage>;
+pub type CssSyntaxNodeWithOffset = biome_rowan::SyntaxNodeWithOffset<CssLanguage>;

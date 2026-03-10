@@ -1,5 +1,6 @@
-use ansi_rgb::{Foreground, red};
 use camino::{Utf8Path, Utf8PathBuf};
+use owo_colors::OwoColorize;
+use owo_colors::colors::*;
 use std::env;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
@@ -53,7 +54,7 @@ impl BenchCase {
         let content = std::fs::read_to_string(&path)
             .map_err(err_to_string)
             .or_else(|_| {
-                println!("[{}] - Downloading [{}] to [{}]", filename, file_url, path);
+                println!("[{filename}] - Downloading [{file_url}] to [{path}]");
                 match ureq::get(file_url).call() {
                     Ok(response) => {
                         let mut reader = response.into_body().into_reader();
@@ -71,9 +72,9 @@ impl BenchCase {
             });
 
         content.map(|code| {
-            println!("[{}] - using [{}]", filename.clone().fg(red()), path);
+            println!("[{}] - using [{}]", filename.clone().fg::<Red>(), path);
             Self {
-                id: filename.to_string(),
+                id: filename.clone(),
                 code,
                 path,
             }

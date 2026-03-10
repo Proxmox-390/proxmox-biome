@@ -2,6 +2,7 @@
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: js/module/import/bracket-spacing/import_bracket_spacing.js
 ---
+
 # Input
 
 ```js
@@ -60,6 +61,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -85,6 +88,7 @@ import(
 	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,
 	{ assert: { type: "json" } }
 );
+
 ```
 
 # Lines exceeding max width of 80 characters
@@ -109,6 +113,8 @@ Bracket spacing: false
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -134,6 +140,7 @@ import(
 	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,
 	{assert: {type: "json"}}
 );
+
 ```
 
 # Lines exceeding max width of 80 characters

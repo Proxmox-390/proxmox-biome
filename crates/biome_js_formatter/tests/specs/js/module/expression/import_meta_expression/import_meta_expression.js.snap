@@ -2,6 +2,7 @@
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: js/module/expression/import_meta_expression/import_meta_expression.js
 ---
+
 # Input
 
 ```js
@@ -33,6 +34,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -41,6 +44,7 @@ import.meta.field =
 	obj.aReallyLongVariableName.andAnotherReallyLongVariableName.andAnotherReallyLongVariableName.andAnotherReallyLongVariable;
 import.meta.aReallyLongVariableName.andAnotherReallyLongVariableName
 	.andAnotherReallyLongVariableName.andAnotherReallyLongVariable;
+
 ```
 
 # Lines exceeding max width of 80 characters
@@ -65,6 +69,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -73,6 +79,7 @@ import.meta.field =
     obj.aReallyLongVariableName.andAnotherReallyLongVariableName.andAnotherReallyLongVariableName.andAnotherReallyLongVariable;
 import.meta.aReallyLongVariableName.andAnotherReallyLongVariableName.andAnotherReallyLongVariableName
     .andAnotherReallyLongVariable;
+
 ```
 
 # Lines exceeding max width of 120 characters

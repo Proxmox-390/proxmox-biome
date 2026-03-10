@@ -2,6 +2,7 @@ use crate::{BiomePath, PathInterner};
 use biome_diagnostics::{Advices, Diagnostic, IoError, LogCategory, Visit, console};
 use biome_diagnostics::{Error, Severity};
 use camino::{Utf8Path, Utf8PathBuf};
+use directories::ProjectDirs;
 pub use memory::{ErrorEntry, MemoryFileSystem};
 pub use os::{OsFileSystem, TemporaryFs};
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,7 @@ use std::panic::RefUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
 use std::{fmt, io};
-use tracing::{error, info};
+use tracing::info;
 
 mod memory;
 mod os;
@@ -19,7 +20,8 @@ mod os;
 pub struct ConfigName;
 
 impl ConfigName {
-    const BIOME_JSON: [&'static str; 2] = ["biome.json", "biome.jsonc"];
+    const BIOME_JSON: [&'static str; 4] =
+        ["biome.json", "biome.jsonc", ".biome.json", ".biome.jsonc"];
 
     pub const fn biome_json() -> &'static str {
         Self::BIOME_JSON[0]
@@ -29,7 +31,7 @@ impl ConfigName {
         Self::BIOME_JSON[1]
     }
 
-    pub const fn file_names() -> [&'static str; 2] {
+    pub const fn file_names() -> [&'static str; 4] {
         Self::BIOME_JSON
     }
 }
@@ -143,26 +145,33 @@ pub trait FileSystem: Send + Sync + RefUnwindSafe {
     ) -> Option<AutoSearchResult> {
         let mut current_search_dir = search_dir.to_path_buf();
         let mut is_searching_in_parent_dir = false;
-
         loop {
             // Iterate all possible file names
             for file_name in search_files {
                 let file_path = current_search_dir.join(file_name);
-                if let Ok(content) = self.read_file_from_path(&file_path) {
-                    if !predicate(&file_path, &content) {
-                        break;
+                match self.read_file_from_path(&file_path) {
+                    Ok(content) => {
+                        if !predicate(&file_path, &content) {
+                            break;
+                        }
+                        if is_searching_in_parent_dir {
+                            info!(
+                                "Biome auto discovered the file at the following path that isn't in the working directory:\n{:?}",
+                                current_search_dir
+                            );
+                        }
+                        return Some(AutoSearchResult {
+                            content,
+                            file_path,
+                            directory_path: current_search_dir,
+                        });
                     }
-                    if is_searching_in_parent_dir {
+                    Err(_) => {
                         info!(
-                            "Biome auto discovered the file at the following path that isn't in the working directory:\n{:?}",
-                            current_search_dir
+                            "Couldn't find the configuration file at {}.",
+                            file_path.as_str()
                         );
                     }
-                    return Some(AutoSearchResult {
-                        content,
-                        file_path,
-                        directory_path: current_search_dir,
-                    });
                 }
             }
 
@@ -172,6 +181,57 @@ pub trait FileSystem: Send + Sync + RefUnwindSafe {
             } else {
                 break;
             }
+        }
+
+        None
+    }
+
+    /// Reads an array of **file** paths from the file system. It returns the contents of the first match.
+    fn read_files_from_paths(&self, paths: &[Utf8PathBuf]) -> Option<AutoSearchResult> {
+        self.read_file_from_paths_with_predicate(paths, &mut |_, _| true)
+    }
+
+    fn read_file_from_paths_with_predicate(
+        &self,
+        paths: &[Utf8PathBuf],
+        predicate: &mut dyn FnMut(&Utf8Path, &str) -> bool,
+    ) -> Option<AutoSearchResult> {
+        for file_path in paths {
+            match self.read_file_from_path(file_path) {
+                Ok(content) => {
+                    if !predicate(file_path, &content) {
+                        continue;
+                    }
+                    return Some(AutoSearchResult {
+                        content,
+                        file_path: file_path.to_path_buf(),
+                        directory_path: file_path
+                            .parent()
+                            .map_or(Utf8PathBuf::new(), |path| path.to_path_buf()),
+                    });
+                }
+                Err(_) => {
+                    info!(
+                        "Couldn't find the configuration file at {}.",
+                        file_path.as_str()
+                    );
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Returns the directory that matches:
+    /// - `$XDG_CONFIG_HOME` or `~$HOME/.config/biome` on linux
+    /// - `/Users/$USER/Library/Application Support/biome` on macOS
+    /// - `C:\Users\$USER\AppData\Roaming\biome\config` on Windows
+    fn user_config_dir(&self) -> Option<Utf8PathBuf> {
+        if let Some(project_dir) = ProjectDirs::from("", "", "biome") {
+            let config_dir =
+                Utf8PathBuf::from_path_buf(project_dir.config_dir().to_path_buf()).ok()?;
+
+            return Some(config_dir);
         }
 
         None
@@ -191,35 +251,22 @@ pub trait FileSystem: Send + Sync + RefUnwindSafe {
                 let mut content = String::new();
                 match file.read_to_string(&mut content) {
                     Ok(_) => Ok(content),
-                    Err(err) => {
-                        error!(
-                            "Biome couldn't read the file {:?}, reason:\n{:?}",
-                            file_path, err
-                        );
-                        Err(FileSystemDiagnostic {
-                            path: file_path.to_string(),
-                            severity: Severity::Error,
-                            error_kind: FsErrorKind::CantReadFile,
-                            source: Some(Error::from(IoError::from(err))),
-                        })
-                    }
+                    Err(err) => Err(FileSystemDiagnostic {
+                        path: file_path.to_string(),
+                        severity: Severity::Error,
+                        error_kind: FsErrorKind::CantReadFile,
+                        source: Some(Error::from(IoError::from(err))),
+                    }),
                 }
             }
-            Err(err) => {
-                error!(
-                    "Biome couldn't open the file {:?}, reason:\n{:?}",
-                    file_path, err
-                );
-                Err(FileSystemDiagnostic {
-                    path: file_path.to_string(),
-                    severity: Severity::Error,
-                    error_kind: FsErrorKind::CantReadFile,
-                    source: Some(Error::from(IoError::from(err))),
-                })
-            }
+            Err(err) => Err(FileSystemDiagnostic {
+                path: file_path.to_string(),
+                severity: Severity::Error,
+                error_kind: FsErrorKind::CantReadFile,
+                source: Some(Error::from(IoError::from(err))),
+            }),
         }
     }
-
     /// Returns the resolution of a symbolic link.
     fn read_link(&self, path: &Utf8Path) -> io::Result<Utf8PathBuf>;
 
@@ -378,6 +425,12 @@ pub trait TraversalContext: Sync {
 
     /// Returns the paths that should be handled
     fn evaluated_paths(&self) -> BTreeSet<BiomePath>;
+
+    /// Returns whether directories are stored and returned by
+    /// `Self::evaluated_paths()`.
+    fn should_store_dirs(&self) -> bool {
+        false
+    }
 }
 
 impl<T> FileSystem for Arc<T>

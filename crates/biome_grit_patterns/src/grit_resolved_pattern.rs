@@ -20,6 +20,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Debug, PartialEq)]
+#[expect(clippy::use_self)]
 pub enum GritResolvedPattern<'a> {
     Binding(Vec<GritBinding<'a>>),
     Snippets(Vec<ResolvedSnippet<'a, GritQueryContext>>),
@@ -169,9 +170,9 @@ impl<'a> ResolvedPattern<'a, GritQueryContext> for GritResolvedPattern<'a> {
                 } else if let Some(pattern) = content.pattern {
                     Self::from_pattern(pattern, state, context, logs)
                 } else {
-                    return Err(GritPatternError::new(format!(
+                    Err(GritPatternError::new(format!(
                         "cannot create resolved snippet from unresolved variable {name}"
-                    )));
+                    )))
                 }
             }
             DynamicPattern::Accessor(accessor) => {
@@ -262,9 +263,9 @@ impl<'a> ResolvedPattern<'a, GritQueryContext> for GritResolvedPattern<'a> {
                 } else if let Some(pattern) = content.pattern {
                     Self::from_pattern(pattern, state, context, logs)
                 } else {
-                    return Err(GritPatternError::new(format!(
+                    Err(GritPatternError::new(format!(
                         "cannot create resolved snippet from unresolved variable {name}"
-                    )));
+                    )))
                 }
             }
             Pattern::List(list) => list
@@ -568,10 +569,10 @@ impl<'a> ResolvedPattern<'a, GritQueryContext> for GritResolvedPattern<'a> {
     }
 
     fn position(&self, language: &GritTargetLanguage) -> Option<Range> {
-        if let Self::Binding(binding) = self {
-            if let Some(binding) = binding.last() {
-                return binding.position(language);
-            }
+        if let Self::Binding(binding) = self
+            && let Some(binding) = binding.last()
+        {
+            return binding.position(language);
         }
 
         None

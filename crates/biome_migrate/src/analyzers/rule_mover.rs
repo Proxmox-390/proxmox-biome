@@ -1,6 +1,8 @@
 use std::str::FromStr;
 
-use biome_analyze::{Ast, FixKind, QueryMatch, Rule, RuleDiagnostic, context::RuleContext};
+use biome_analyze::{
+    Ast, FixKind, QueryMatch, Rule, RuleDiagnostic, context::RuleContext, utils::fix_separators,
+};
 use biome_configuration::analyzer::{
     RuleGroup, RuleName,
     assist::{self, ActionName},
@@ -9,10 +11,7 @@ use biome_console::markup;
 use biome_diagnostics::category;
 use biome_json_factory::make;
 use biome_json_syntax::{AnyJsonValue, JsonMember, JsonMemberList, JsonObjectValue, T};
-use biome_rowan::{
-    AstNode, AstSeparatedList, BatchMutationExt, Language, SyntaxToken, TriviaPieceKind,
-    chain_trivia_pieces,
-};
+use biome_rowan::{AstNode, AstSeparatedList, BatchMutationExt, TriviaPieceKind};
 
 use crate::{MigrationAction, declare_migration};
 
@@ -27,20 +26,38 @@ declare_migration! {
 /// Linter rules that have been renamed.
 /// The first element of every pair is the old name of the rule.
 #[rustfmt::skip]
-const RULE_RENAMINGS: &[(&str, RuleName)] = &[
+const RULE_RENAMING: &[(&str, RuleName)] = &[
     ("noConsoleLog", RuleName::NoConsole),
     ("noInvalidNewBuiltin", RuleName::NoInvalidBuiltinInstantiation),
     ("noMultipleSpacesInRegularExpressionLiterals", RuleName::NoAdjacentSpacesInRegex),
     ("noNewSymbol", RuleName::NoInvalidBuiltinInstantiation),
     ("noUnnecessaryContinue", RuleName::NoUselessContinue),
+    ("useNamedOperation", RuleName::UseGraphqlNamedOperations),
     ("useShorthandArrayType", RuleName::UseConsistentArrayType),
     ("useSingleCaseStatement", RuleName::NoSwitchDeclarations),
+    ("noReactPropAssign", RuleName::NoReactPropAssignments),
+    ("noGlobalDirnameFilename", RuleName::NoGlobalDirnameFilename),
+    ("noConstantBinaryExpression", RuleName::NoConstantBinaryExpressions),
+    ("noDestructuredProps", RuleName::NoSolidDestructuredProps),
+    ("noImplicitCoercion", RuleName::NoImplicitCoercions),
+    ("noUnknownAtRule", RuleName::NoUnknownAtRules),
+    ("useAdjacentGetterSetter", RuleName::UseGroupedAccessorPairs),
+    ("useConsistentObjectDefinition", RuleName::UseConsistentObjectDefinitions),
+    ("useConsistentResponse", RuleName::UseStaticResponseMethods),
+    ("useForComponent", RuleName::UseSolidForComponent),
+    ("useJsonImportAttribute", RuleName::UseJsonImportAttributes),
+    ("useUnifiedTypeSignature", RuleName::UseUnifiedTypeSignatures),
+    ("useUniqueArgumentNames", RuleName::NoDuplicateArgumentNames),
+    ("useUniqueFieldDefinitionNames", RuleName::NoDuplicateFieldDefinitionNames),
+    ("useUniqueGraphqlOperationName", RuleName::NoDuplicateGraphqlOperationName),
+    ("useUniqueInputFieldNames", RuleName::NoDuplicateInputFieldNames),
+    ("useUniqueVariableNames", RuleName::NoDuplicateVariableNames),
 ];
 
 /// Assist actions that have been renamed.
 /// The first element of every pair is the old name of the action.
 #[rustfmt::skip]
-const ACTION_RENAMINGS: &[(&str, ActionName)] = &[];
+const ACTION_RENAMING: &[(&str, ActionName)] = &[];
 
 impl Rule for RuleMover {
     type Query = Ast<JsonMember>;
@@ -48,13 +65,17 @@ impl Rule for RuleMover {
     type Signals = Box<[Self::State]>;
     type Options = ();
 
-    fn run(ctx: &biome_analyze::context::RuleContext<Self>) -> Self::Signals {
+    fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
-        let member_name = node.name().and_then(|name| name.inner_string_text());
+        let member_name = node
+            .name()
+            .ok()
+            .and_then(|name| name.inner_string_text())
+            .and_then(|r| r.ok());
         let is_linter_rules = member_name
             .as_ref()
-            .is_ok_and(|name| name.text() == "rules");
-        let is_assist_actions = member_name.is_ok_and(|name| name.text() == "actions");
+            .is_some_and(|name| name.text() == "rules");
+        let is_assist_actions = member_name.is_some_and(|name| name.text() == "actions");
         if !is_linter_rules && !is_assist_actions {
             return Box::default();
         }
@@ -66,7 +87,12 @@ impl Rule for RuleMover {
             let Ok(AnyJsonValue::JsonObjectValue(group_rules)) = group_elt.value() else {
                 continue;
             };
-            let Ok(group_name) = group_elt.name().and_then(|name| name.inner_string_text()) else {
+            let Some(group_name) = group_elt
+                .name()
+                .ok()
+                .and_then(|name| name.inner_string_text())
+                .and_then(|r| r.ok())
+            else {
                 continue;
             };
             if is_linter_rules {
@@ -74,7 +100,11 @@ impl Rule for RuleMover {
                     continue;
                 };
                 for rule_node in group_rules.json_member_list().into_iter().flatten() {
-                    let Ok(rule_name) = rule_node.name().and_then(|name| name.inner_string_text())
+                    let Some(rule_name) = rule_node
+                        .name()
+                        .ok()
+                        .and_then(|name| name.inner_string_text())
+                        .and_then(|r| r.ok())
                     else {
                         continue;
                     };
@@ -92,7 +122,7 @@ impl Rule for RuleMover {
                                 old_rule_name: None,
                             });
                         }
-                    } else if let Some((old_rule_name, new_rule)) = RULE_RENAMINGS
+                    } else if let Some((old_rule_name, new_rule)) = RULE_RENAMING
                         .iter()
                         .find(|(old_name, _)| old_name == &rule_name)
                         .copied()
@@ -111,7 +141,11 @@ impl Rule for RuleMover {
                     continue;
                 };
                 for rule_node in group_rules.json_member_list().into_iter().flatten() {
-                    let Ok(rule_name) = rule_node.name().and_then(|name| name.inner_string_text())
+                    let Some(rule_name) = rule_node
+                        .name()
+                        .ok()
+                        .and_then(|name| name.inner_string_text())
+                        .and_then(|r| r.ok())
                     else {
                         continue;
                     };
@@ -125,7 +159,7 @@ impl Rule for RuleMover {
                                 old_rule_name: None,
                             });
                         }
-                    } else if let Some((old_rule_name, new_rule)) = ACTION_RENAMINGS
+                    } else if let Some((old_rule_name, new_rule)) = ACTION_RENAMING
                         .iter()
                         .find(|(old_name, _)| old_name == &rule_name)
                         .copied()
@@ -219,7 +253,12 @@ impl Rule for RuleMover {
             let mut is_rule_migrated = false;
             for elt in old_list.elements() {
                 let node = elt.node.ok()?;
-                if let Ok(name) = node.name().and_then(|name| name.inner_string_text()) {
+                if let Some(name) = node
+                    .name()
+                    .ok()
+                    .and_then(|name| name.inner_string_text())
+                    .and_then(|r| r.ok())
+                {
                     if name.text() == new_rule_name {
                         // This happens when:
                         // - the rule has already been manually migrated, but the old one was not removed
@@ -242,7 +281,7 @@ impl Rule for RuleMover {
                 // Add the new rule
                 new_elements.push((new_rule_node, None));
             }
-            handle_trvia(
+            fix_separators(
                 new_elements.iter_mut().map(|(a, b)| (a, b)),
                 last_has_separator,
                 || make::token(T![,]),
@@ -267,22 +306,23 @@ impl Rule for RuleMover {
             }
             let last_has_separator = new_elements.last().is_some_and(|(_, sep)| sep.is_some());
             let mut indent = Vec::new();
-            if let Some((last_node, _)) = new_elements.last() {
-                if let Some(first_token) = last_node.syntax().first_token() {
-                    indent.extend(first_token.indentation_trivia_pieces());
-                }
+            if let Some((last_node, _)) = new_elements.last()
+                && let Some(first_token) = last_node.syntax().first_token()
+            {
+                indent.extend(first_token.indentation_trivia_pieces());
             }
             // Add the new group and rule
             let mut indent = Vec::new();
-            if let Some(Ok(last_group_node)) = old_rules_list.last() {
-                if let Some(first_token) = last_group_node.syntax().first_token() {
-                    indent.extend(first_token.indentation_trivia_pieces());
-                }
+            if let Some(Ok(last_group_node)) = old_rules_list.last()
+                && let Some(first_token) = last_group_node.syntax().first_token()
+            {
+                indent.extend(first_token.indentation_trivia_pieces());
             }
             let new_group_node = make::json_member(
                 make::json_member_name(
                     make::json_string_literal(new_group_name).prepend_trivia_pieces(indent.clone()),
-                ),
+                )
+                .into(),
                 make::token(T![:]).with_trailing_trivia([(TriviaPieceKind::Whitespace, " ")]),
                 make::json_object_value(
                     make::token(T!['{']).with_trailing_trivia([(TriviaPieceKind::Whitespace, " ")]),
@@ -324,7 +364,7 @@ impl Rule for RuleMover {
                         new_elements.push((node, separator));
                     }
                 }
-                handle_trvia(
+                fix_separators(
                     new_elements.iter_mut().map(|(a, b)| (a, b)),
                     last_has_separator,
                     || make::token(T![,]),
@@ -351,7 +391,7 @@ impl Rule for RuleMover {
         if new_group_range.is_none() {
             new_rules_elements.push((new_group_node, None));
         }
-        handle_trvia(
+        fix_separators(
             new_rules_elements.iter_mut().map(|(a, b)| (a, b)),
             last_has_separator,
             || make::token(T![,]),
@@ -447,12 +487,12 @@ fn transform_value(value: AnyJsonValue, old_rule_name: &'static str) -> Option<A
             make::json_member_list(
                 [
                     make::json_member(
-                        make::json_member_name(make::json_string_literal("level")),
+                        make::json_member_name(make::json_string_literal("level")).into(),
                         colon.clone(),
                         get_rule_level(value),
                     ),
                     make::json_member(
-                        make::json_member_name(make::json_string_literal("options")),
+                        make::json_member_name(make::json_string_literal("options")).into(),
                         colon,
                         options,
                     ),
@@ -468,8 +508,12 @@ fn transform_value(value: AnyJsonValue, old_rule_name: &'static str) -> Option<A
 fn get_rule_level(value: AnyJsonValue) -> AnyJsonValue {
     if let AnyJsonValue::JsonObjectValue(obj) = &value {
         for item in obj.json_member_list().into_iter().flatten() {
-            let text = item.name().and_then(|n| n.inner_string_text());
-            if text.is_ok_and(|name| name.text() == "level") {
+            let text = item
+                .name()
+                .ok()
+                .and_then(|n| n.inner_string_text())
+                .and_then(|r| r.ok());
+            if text.is_some_and(|name| name.text() == "level") {
                 return item.value().unwrap_or(value);
             }
         }
@@ -480,7 +524,7 @@ fn get_rule_level(value: AnyJsonValue) -> AnyJsonValue {
 /// Creates the member for `noConsoleLog`
 fn create_console_log_options() -> AnyJsonValue {
     let allow_option = make::json_member(
-        make::json_member_name(make::json_string_literal("allow")),
+        make::json_member_name(make::json_string_literal("allow")).into(),
         make::token(T![:]).with_trailing_trivia([(TriviaPieceKind::Whitespace, " ")]),
         make::json_array_value(
             make::token(T!['[']),
@@ -504,7 +548,7 @@ fn create_console_log_options() -> AnyJsonValue {
 
 fn create_shorthand_array_type_options() -> AnyJsonValue {
     let syntax_option = make::json_member(
-        make::json_member_name(make::json_string_literal("syntax")),
+        make::json_member_name(make::json_string_literal("syntax")).into(),
         make::token(T![:]).with_trailing_trivia(vec![(TriviaPieceKind::Whitespace, " ")]),
         make::json_string_value(
             make::json_string_literal("shorthand")
@@ -518,41 +562,4 @@ fn create_shorthand_array_type_options() -> AnyJsonValue {
         make::token(T!['}']).with_trailing_trivia([(TriviaPieceKind::Whitespace, " ")]),
     )
     .into()
-}
-
-// TODO: copied from `biome_js_analyze/src/assist/source/organize_imports/specifiers_attributes.rs`
-// could be worth to share it.
-fn handle_trvia<'a, L: Language + 'a, N: AstNode<Language = L> + 'a>(
-    // Mutable iterator of a list of nodes and their optional separators
-    iter: impl std::iter::ExactSizeIterator<Item = (&'a mut N, &'a mut Option<SyntaxToken<L>>)>,
-    needs_last_separator: bool,
-    make_separator: fn() -> SyntaxToken<L>,
-) {
-    let last_index = iter.len().saturating_sub(1);
-    for (i, (node, optional_separator)) in iter.enumerate() {
-        if let Some(separator) = optional_separator {
-            // Remove the last separator at the separator has no attached comments
-            if i == last_index
-                && !(needs_last_separator
-                    || separator.has_leading_comments()
-                    || separator.has_trailing_comments())
-            {
-                // Transfer the separator trivia
-                if let Some(new_node) = node.clone().append_trivia_pieces(chain_trivia_pieces(
-                    separator.leading_trivia().pieces(),
-                    separator.trailing_trivia().pieces(),
-                )) {
-                    *node = new_node;
-                }
-                *optional_separator = None;
-            }
-        } else if i != last_index || needs_last_separator {
-            // The last node is moved and has no trailing separator.
-            // Thus we build a new separator and remove its trailing whitespaces.
-            if let Some(new_node) = node.clone().trim_trailing_trivia() {
-                *node = new_node;
-            }
-            *optional_separator = Some(make_separator());
-        }
-    }
 }

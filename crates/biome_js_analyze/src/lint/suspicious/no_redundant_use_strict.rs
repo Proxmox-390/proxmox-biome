@@ -5,6 +5,7 @@ use biome_diagnostics::Severity;
 use biome_js_syntax::{
     AnyJsClass, JsDirective, JsDirectiveList, JsFileSource, JsFunctionBody, JsModule, JsScript,
 };
+use biome_rule_options::no_redundant_use_strict::NoRedundantUseStrictOptions;
 
 use biome_rowan::{AstNode, AstNodeList, BatchMutationExt, declare_node_union};
 
@@ -21,10 +22,6 @@ declare_lint_rule! {
  /// ```
  ///
  /// Instead, `.cjs` files are considered "scripts" and the directive `"use strict"` is accepted and advised.
- ///
- /// Note that the leading trivia, e.g., comments or newlines preceding
- /// the redundant `"use strict"` will also be removed. So that comment
- /// directives won't be transferred to a wrong place.
  ///
  /// ## Examples
  ///
@@ -109,7 +106,7 @@ impl Rule for NoRedundantUseStrict {
     type Query = Ast<JsDirective>;
     type State = AnyJsStrictModeNode;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoRedundantUseStrictOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
@@ -192,9 +189,7 @@ impl Rule for NoRedundantUseStrict {
     fn action(ctx: &RuleContext<Self>, _state: &Self::State) -> Option<JsRuleAction> {
         let node = ctx.query();
         let mut mutation = ctx.root().begin();
-        // This will also remove the trivia of the node
-        // which is intended
-        mutation.remove_node(node.clone());
+        mutation.remove_node_keep_trivia(node.clone());
         Some(JsRuleAction::new(
             ctx.metadata().action_category(ctx.category(), ctx.group()),
             ctx.metadata().applicability(),

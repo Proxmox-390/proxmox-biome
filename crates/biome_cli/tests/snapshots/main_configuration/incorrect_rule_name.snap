@@ -55,6 +55,7 @@ biome.json:6:13 deserialize ━━━━━━━━━━━━━━━━━�
   - noConstructorReturn
   - noEmptyCharacterClassInRegex
   - noEmptyPattern
+  - noGlobalDirnameFilename
   - noGlobalObjectCalls
   - noInnerDeclarations
   - noInvalidBuiltinInstantiation
@@ -64,13 +65,20 @@ biome.json:6:13 deserialize ━━━━━━━━━━━━━━━━━�
   - noInvalidPositionAtImportRule
   - noInvalidUseBeforeDeclaration
   - noMissingVarFunction
+  - noNestedComponentDefinitions
+  - noNextAsyncClientComponent
   - noNodejsModules
   - noNonoctalDecimalEscape
   - noPrecisionLoss
   - noPrivateImports
+  - noProcessGlobal
+  - noQwikUseVisibleTask
+  - noReactPropAssignments
   - noRenderReturnValue
+  - noRestrictedElements
   - noSelfAssign
   - noSetterReturn
+  - noSolidDestructuredProps
   - noStringCaseMismatch
   - noSwitchDeclarations
   - noUndeclaredDependencies
@@ -85,6 +93,7 @@ biome.json:6:13 deserialize ━━━━━━━━━━━━━━━━━�
   - noUnmatchableAnbSelector
   - noUnreachable
   - noUnreachableSuper
+  - noUnresolvedImports
   - noUnsafeFinally
   - noUnsafeOptionalChaining
   - noUnusedFunctionParameters
@@ -94,11 +103,25 @@ biome.json:6:13 deserialize ━━━━━━━━━━━━━━━━━�
   - noUnusedVariables
   - noVoidElementsWithChildren
   - noVoidTypeReturn
+  - noVueDataObjectDeclaration
+  - noVueDuplicateKeys
+  - noVueReservedKeys
+  - noVueReservedProps
+  - noVueSetupPropsReactivityLoss
   - useExhaustiveDependencies
+  - useGraphqlNamedOperations
   - useHookAtTopLevel
+  - useImageSize
   - useImportExtensions
   - useIsNan
+  - useJsonImportAttributes
   - useJsxKeyInIterable
+  - useParseIntRadix
+  - useQwikClasslist
+  - useQwikMethodUsage
+  - useQwikValidLexicalScope
+  - useSingleJsDocAsterisk
+  - useUniqueElementIds
   - useValidForDirection
   - useValidTypeof
   - useYield
@@ -130,6 +153,8 @@ biome.json:9:13 deserialize ━━━━━━━━━━━━━━━━━�
   - noHeadElement
   - noImplicitBoolean
   - noInferrableTypes
+  - noJsxLiterals
+  - noMagicNumbers
   - noNamespace
   - noNegationElse
   - noNestedTernary
@@ -154,9 +179,12 @@ biome.json:9:13 deserialize ━━━━━━━━━━━━━━━━━�
   - useCollapsedIf
   - useComponentExportOnlyModules
   - useConsistentArrayType
+  - useConsistentArrowReturn
   - useConsistentBuiltinInstantiation
   - useConsistentCurlyBraces
   - useConsistentMemberAccessibility
+  - useConsistentObjectDefinitions
+  - useConsistentTypeDefinitions
   - useConst
   - useDefaultParameterLast
   - useDefaultSwitchClause
@@ -165,23 +193,32 @@ biome.json:9:13 deserialize ━━━━━━━━━━━━━━━━━�
   - useExplicitLengthCheck
   - useExponentiationOperator
   - useExportType
+  - useExportsLast
   - useFilenamingConvention
   - useForOf
   - useFragmentSyntax
+  - useGraphqlNamingConvention
+  - useGroupedAccessorPairs
   - useImportType
   - useLiteralEnumMembers
   - useNamingConvention
   - useNodeAssertStrict
   - useNodejsImportProtocol
   - useNumberNamespace
+  - useNumericSeparators
+  - useObjectSpread
+  - useReactFunctionComponents
+  - useReadonlyClassProperties
   - useSelfClosingElements
   - useShorthandAssign
   - useShorthandFunctionType
   - useSingleVarDeclarator
+  - useSymbolDescription
   - useTemplate
   - useThrowNewError
   - useThrowOnlyError
   - useTrimStartEnd
+  - useUnifiedTypeSignatures
   
 
 ```

@@ -4,15 +4,16 @@ mod configs;
 #[cfg(test)]
 mod snap_test;
 
-use biome_resolver::FsWithResolverProxy;
 #[cfg(test)]
 use snap_test::assert_cli_snapshot;
 
 use biome_cli::{CliDiagnostic, CliSession, biome_command};
 use biome_console::{BufferConsole, Console, ConsoleExt, markup};
 use biome_fs::{MemoryFileSystem, OsFileSystem};
+use biome_resolver::FsWithResolverProxy;
 use biome_service::App;
 use bpaf::ParseFailure;
+use std::sync::Arc;
 
 const UNFORMATTED: &str = "  statement(  )  ";
 const FORMATTED: &str = "statement();\n";
@@ -25,25 +26,6 @@ function f() {
 return { something }
 }
 "#;
-
-mod help {
-    use super::*;
-    use bpaf::Args;
-
-    #[test]
-    fn unknown_command() {
-        let mut console = BufferConsole::default();
-        let fs = MemoryFileSystem::default();
-
-        let (_, result) = run_cli(
-            fs,
-            &mut console,
-            Args::from(["unknown", "--help"].as_slice()),
-        );
-
-        assert!(result.is_ok(), "run_cli returned {result:?}");
-    }
-}
 
 mod main {
     use super::*;
@@ -161,7 +143,7 @@ mod configuration {
 
     #[test]
     fn correct_root() {
-        let mut fs = MemoryFileSystem::default();
+        let fs = MemoryFileSystem::default();
         let mut console = BufferConsole::default();
         let file_path = Utf8Path::new("biome.json");
         fs.insert(file_path.into(), CONFIG_ALL_FIELDS.as_bytes());
@@ -185,7 +167,7 @@ mod configuration {
 
     #[test]
     fn line_width_error() {
-        let mut fs = MemoryFileSystem::default();
+        let fs = MemoryFileSystem::default();
         let mut console = BufferConsole::default();
 
         let file_path = Utf8Path::new("biome.json");
@@ -210,7 +192,7 @@ mod configuration {
 
     #[test]
     fn incorrect_rule_name() {
-        let mut fs = MemoryFileSystem::default();
+        let fs = MemoryFileSystem::default();
         let mut console = BufferConsole::default();
 
         let file_path = Utf8Path::new("biome.json");
@@ -235,7 +217,7 @@ mod configuration {
 
     #[test]
     fn incorrect_globals() {
-        let mut fs = MemoryFileSystem::default();
+        let fs = MemoryFileSystem::default();
         let mut console = BufferConsole::default();
 
         let file_path = Utf8Path::new("biome.json");
@@ -260,7 +242,7 @@ mod configuration {
 
     #[test]
     fn ignore_globals() {
-        let mut fs = MemoryFileSystem::default();
+        let fs = MemoryFileSystem::default();
         let mut console = BufferConsole::default();
 
         fs.insert(
@@ -276,7 +258,7 @@ mod configuration {
 
     #[test]
     fn override_globals() {
-        let mut fs = MemoryFileSystem::default();
+        let fs = MemoryFileSystem::default();
         let mut console = BufferConsole::default();
 
         fs.insert(
@@ -360,7 +342,7 @@ pub(crate) fn run_cli_with_dyn_fs(
         runtime::Runtime,
     };
 
-    let factory = ServerFactory::new_with_fs(Box::new(OsFileSystem::new(
+    let factory = ServerFactory::new_with_fs(Arc::new(OsFileSystem::new(
         fs.working_directory().unwrap_or_default(),
     )));
     let connection = factory.create();
@@ -404,7 +386,7 @@ pub(crate) fn run_cli_with_server_workspace(
 
     let files = fs.files.clone();
 
-    let workspace = workspace::server(Box::new(fs), None);
+    let workspace = workspace::server(Arc::new(fs), None);
     let app = App::new(console, WorkspaceRef::Owned(workspace));
 
     let mut session = CliSession { app };

@@ -1,10 +1,9 @@
 use biome_analyze::context::RuleContext;
 use biome_analyze::{Ast, Rule, RuleDiagnostic, RuleSource, declare_lint_rule};
 use biome_console::markup;
-use biome_deserialize_macros::Deserializable;
 use biome_diagnostics::Severity;
 use biome_js_syntax::{AnyJsStatement, JsFileSource, JsLabeledStatement};
-use serde::{Deserialize, Serialize};
+use biome_rule_options::no_confusing_labels::NoConfusingLabelsOptions;
 
 declare_lint_rule! {
     /// Disallow labeled statements that are not loops.
@@ -88,21 +87,11 @@ declare_lint_rule! {
     }
 }
 
-/// Options for the rule `noConfusingLabels`
-#[derive(Clone, Debug, Default, Deserialize, Deserializable, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
-pub struct NoConfusingLabelsOptions {
-    /// A list of (non-confusing) labels that should be allowed
-    #[serde(skip_serializing_if = "<[_]>::is_empty")]
-    pub allowed_labels: Box<[Box<str>]>,
-}
-
 impl Rule for NoConfusingLabels {
     type Query = Ast<JsLabeledStatement>;
     type State = ();
     type Signals = Option<Self::State>;
-    type Options = Box<NoConfusingLabelsOptions>;
+    type Options = NoConfusingLabelsOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Option<Self::State> {
         let labeled_stmt = ctx.query();
@@ -124,6 +113,7 @@ impl Rule for NoConfusingLabels {
             .options()
             .allowed_labels
             .iter()
+            .flatten()
             .any(|s| s.as_ref() == label)
         {
             return None;
@@ -144,7 +134,10 @@ impl Rule for NoConfusingLabels {
         let labeled_stmt = ctx.query();
         let allowed_labels = &ctx.options().allowed_labels;
 
-        let message = if allowed_labels.is_empty() {
+        let message = if allowed_labels
+            .as_ref()
+            .is_none_or(|allowed_labels| allowed_labels.is_empty())
+        {
             "Only loops should be labeled.\nThe use of labels for other statements is suspicious and unfamiliar."
         } else {
             "Some labels are explicitly allowed, but this one is not.\nOtherwise, only loops should be labeled."

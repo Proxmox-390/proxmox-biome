@@ -2,6 +2,7 @@
 source: crates/biome_css_parser/tests/spec_test.rs
 expression: snapshot
 ---
+
 ## Input
 
 ```css
@@ -17,7 +18,7 @@ expression: snapshot
 ```
 CssRoot {
     bom_token: missing (optional),
-    rules: CssRuleList [
+    items: CssRootItemList [
         CssQualifiedRule {
             prelude: CssSelectorList [
                 CssCompoundSelector {
@@ -28,9 +29,11 @@ CssRoot {
                             double_colon_token: COLON2@0..2 "::" [] [],
                             element: CssBogusPseudoElement {
                                 items: [
-                                    HIGHLIGHT_KW@2..11 "highlight" [] [],
-                                    L_PAREN@11..12 "(" [] [],
                                     CssIdentifier {
+                                        value_token: IDENT@2..11 "highlight" [] [],
+                                    },
+                                    L_PAREN@11..12 "(" [] [],
+                                    CssCustomIdentifier {
                                         value_token: IDENT@12..16 "div" [] [Whitespace(" ")],
                                     },
                                     CssBogus {
@@ -62,7 +65,9 @@ CssRoot {
                             double_colon_token: COLON2@25..28 "::" [Newline("\n")] [],
                             element: CssBogusPseudoElement {
                                 items: [
-                                    HIGHLIGHT_KW@28..37 "highlight" [] [],
+                                    CssIdentifier {
+                                        value_token: IDENT@28..37 "highlight" [] [],
+                                    },
                                     L_PAREN@37..39 "(" [] [Whitespace(" ")],
                                 ],
                             },
@@ -86,7 +91,9 @@ CssRoot {
                             double_colon_token: COLON2@41..44 "::" [Newline("\n")] [],
                             element: CssBogusPseudoElement {
                                 items: [
-                                    HIGHLIGHT_KW@44..53 "highlight" [] [],
+                                    CssIdentifier {
+                                        value_token: IDENT@44..53 "highlight" [] [],
+                                    },
                                     L_PAREN@53..54 "(" [] [],
                                 ],
                             },
@@ -108,7 +115,7 @@ CssRoot {
 ```
 0: CSS_ROOT@0..55
   0: (empty)
-  1: CSS_RULE_LIST@0..54
+  1: CSS_ROOT_ITEM_LIST@0..54
     0: CSS_QUALIFIED_RULE@0..25
       0: CSS_SELECTOR_LIST@0..23
         0: CSS_COMPOUND_SELECTOR@0..23
@@ -118,9 +125,10 @@ CssRoot {
             0: CSS_PSEUDO_ELEMENT_SELECTOR@0..23
               0: COLON2@0..2 "::" [] []
               1: CSS_BOGUS_PSEUDO_ELEMENT@2..23
-                0: HIGHLIGHT_KW@2..11 "highlight" [] []
+                0: CSS_IDENTIFIER@2..11
+                  0: IDENT@2..11 "highlight" [] []
                 1: L_PAREN@11..12 "(" [] []
-                2: CSS_IDENTIFIER@12..16
+                2: CSS_CUSTOM_IDENTIFIER@12..16
                   0: IDENT@12..16 "div" [] [Whitespace(" ")]
                 3: CSS_BOGUS@16..21
                   0: PLUS@16..18 "+" [] [Whitespace(" ")]
@@ -139,7 +147,8 @@ CssRoot {
             0: CSS_PSEUDO_ELEMENT_SELECTOR@25..39
               0: COLON2@25..28 "::" [Newline("\n")] []
               1: CSS_BOGUS_PSEUDO_ELEMENT@28..39
-                0: HIGHLIGHT_KW@28..37 "highlight" [] []
+                0: CSS_IDENTIFIER@28..37
+                  0: IDENT@28..37 "highlight" [] []
                 1: L_PAREN@37..39 "(" [] [Whitespace(" ")]
       1: CSS_DECLARATION_OR_RULE_BLOCK@39..41
         0: L_CURLY@39..40 "{" [] []
@@ -154,7 +163,8 @@ CssRoot {
             0: CSS_PSEUDO_ELEMENT_SELECTOR@41..54
               0: COLON2@41..44 "::" [Newline("\n")] []
               1: CSS_BOGUS_PSEUDO_ELEMENT@44..54
-                0: HIGHLIGHT_KW@44..53 "highlight" [] []
+                0: CSS_IDENTIFIER@44..53
+                  0: IDENT@44..53 "highlight" [] []
                 1: L_PAREN@53..54 "(" [] []
       1: CSS_BOGUS_BLOCK@54..54
   2: EOF@54..55 "" [Newline("\n")] []

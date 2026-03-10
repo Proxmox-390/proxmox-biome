@@ -1,7 +1,6 @@
 use super::{
     AnalyzerVisitorBuilder, CodeActionsParams, EnabledForPath, ExtensionHandler, FixAllParams,
-    LintParams, LintResults, ParseResult, ProcessLint, SearchCapabilities, is_diagnostic_error,
-    search,
+    LintParams, LintResults, ParseResult, ProcessFixAll, ProcessLint, SearchCapabilities, search,
 };
 use crate::WorkspaceError;
 use crate::configuration::to_analyzer_rules;
@@ -11,37 +10,36 @@ use crate::file_handlers::{
 };
 use crate::settings::{
     FormatSettings, LanguageListSettings, LanguageSettings, OverrideSettings, ServiceLanguage,
-    Settings, WorkspaceSettingsHandle, check_feature_activity, check_override_feature_activity,
+    Settings, SettingsWithEditor, check_feature_activity, check_override_feature_activity,
 };
 use crate::workspace::{
-    CodeAction, DocumentFileSource, FixAction, FixFileMode, FixFileResult, GetSyntaxTreeResult,
-    PullActionsResult,
+    CodeAction, DocumentFileSource, FixFileResult, GetSyntaxTreeResult, PullActionsResult,
 };
 use biome_analyze::options::PreferredQuote;
-use biome_analyze::{
-    AnalysisFilter, AnalyzerConfiguration, AnalyzerOptions, ControlFlow, Never, RuleError,
-};
+use biome_analyze::{AnalysisFilter, AnalyzerConfiguration, AnalyzerOptions, ControlFlow, Never};
 use biome_configuration::css::{
     CssAllowWrongLineCommentsEnabled, CssAssistConfiguration, CssAssistEnabled,
     CssFormatterConfiguration, CssFormatterEnabled, CssLinterConfiguration, CssLinterEnabled,
-    CssModulesEnabled, CssParserConfiguration,
+    CssModulesEnabled, CssParserConfiguration, CssTailwindDirectivesEnabled,
 };
-use biome_css_analyze::analyze;
+use biome_css_analyze::{CssAnalyzerServices, analyze};
 use biome_css_formatter::context::CssFormatOptions;
 use biome_css_formatter::format_node;
-use biome_css_parser::CssParserOptions;
-use biome_css_syntax::{CssLanguage, CssRoot, CssSyntaxNode};
-use biome_diagnostics::Applicability;
+use biome_css_parser::{CssModulesKind, CssParserOptions};
+use biome_css_semantic::semantic_model;
+use biome_css_syntax::{AnyCssRoot, CssLanguage, CssRoot, CssSyntaxNode};
 use biome_formatter::{
     FormatError, IndentStyle, IndentWidth, LineEnding, LineWidth, Printed, QuoteStyle,
+    TrailingNewline,
 };
 use biome_fs::BiomePath;
 use biome_parser::AnyParse;
 use biome_rowan::{AstNode, NodeCache};
 use biome_rowan::{TextRange, TextSize, TokenAtOffset};
 use camino::Utf8Path;
+use either::Either;
 use std::borrow::Cow;
-use tracing::{debug_span, error, info, trace_span};
+use tracing::{error, info};
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -52,6 +50,7 @@ pub struct CssFormatterSettings {
     pub indent_style: Option<IndentStyle>,
     pub quote_style: Option<QuoteStyle>,
     pub enabled: Option<CssFormatterEnabled>,
+    pub trailing_newline: Option<TrailingNewline>,
 }
 
 impl From<CssFormatterConfiguration> for CssFormatterSettings {
@@ -63,6 +62,7 @@ impl From<CssFormatterConfiguration> for CssFormatterSettings {
             indent_style: configuration.indent_style,
             quote_style: configuration.quote_style,
             line_ending: configuration.line_ending,
+            trailing_newline: configuration.trailing_newline,
         }
     }
 }
@@ -102,6 +102,7 @@ impl From<CssAssistConfiguration> for CssAssistSettings {
 pub struct CssParserSettings {
     pub allow_wrong_line_comments: Option<CssAllowWrongLineCommentsEnabled>,
     pub css_modules_enabled: Option<CssModulesEnabled>,
+    pub tailwind_directives: Option<CssTailwindDirectivesEnabled>,
 }
 
 impl From<CssParserConfiguration> for CssParserSettings {
@@ -109,6 +110,7 @@ impl From<CssParserConfiguration> for CssParserSettings {
         Self {
             allow_wrong_line_comments: configuration.allow_wrong_line_comments,
             css_modules_enabled: configuration.css_modules,
+            tailwind_directives: configuration.tailwind_directives,
         }
     }
 }
@@ -127,46 +129,100 @@ impl CssParserSettings {
     pub fn allow_wrong_line_comments(&self) -> bool {
         self.allow_wrong_line_comments.unwrap_or_default().into()
     }
+
+    pub fn tailwind_directives_enabled(&self) -> bool {
+        self.tailwind_directives.unwrap_or_default().into()
+    }
 }
 
 impl ServiceLanguage for CssLanguage {
     type FormatterSettings = CssFormatterSettings;
     type LinterSettings = CssLinterSettings;
+    type AssistSettings = CssAssistSettings;
     type FormatOptions = CssFormatOptions;
     type ParserSettings = CssParserSettings;
-    type AssistSettings = CssAssistSettings;
+    type ParserOptions = CssParserOptions;
+
     type EnvironmentSettings = ();
 
     fn lookup_settings(language: &LanguageListSettings) -> &LanguageSettings<Self> {
         &language.css
     }
 
+    fn resolve_environment(_settings: &Settings) -> Option<&Self::EnvironmentSettings> {
+        None
+    }
+
+    fn resolve_parse_options(
+        overrides: &OverrideSettings,
+        language: &Self::ParserSettings,
+        path: &BiomePath,
+        file_source: &DocumentFileSource,
+    ) -> Self::ParserOptions {
+        let mut options = CssParserOptions {
+            allow_wrong_line_comments: language
+                .allow_wrong_line_comments
+                .unwrap_or_default()
+                .into(),
+            css_modules: language
+                .css_modules_enabled
+                .map(|bool| {
+                    if bool.value() {
+                        CssModulesKind::Classic
+                    } else {
+                        CssModulesKind::None
+                    }
+                })
+                .or_else(|| {
+                    file_source.to_css_file_source().map(|files_source| {
+                        if files_source.is_vue_embedded() {
+                            CssModulesKind::Vue
+                        } else {
+                            CssModulesKind::Classic
+                        }
+                    })
+                })
+                .unwrap_or_default(),
+            grit_metavariables: false,
+            tailwind_directives: language.tailwind_directives.unwrap_or_default().into(),
+        };
+
+        overrides.apply_override_css_parser_options(path, &mut options);
+
+        options
+    }
+
     fn resolve_format_options(
-        global: Option<&FormatSettings>,
-        overrides: Option<&OverrideSettings>,
-        language: Option<&Self::FormatterSettings>,
+        global: &FormatSettings,
+        overrides: &OverrideSettings,
+        language: &Self::FormatterSettings,
         path: &BiomePath,
         document_file_source: &DocumentFileSource,
     ) -> Self::FormatOptions {
         let indent_style = language
-            .and_then(|l| l.indent_style)
-            .or(global.and_then(|g| g.indent_style))
+            .indent_style
+            .or(global.indent_style)
             .unwrap_or_default();
         let line_width = language
-            .and_then(|l| l.line_width)
-            .or(global.and_then(|g| g.line_width))
+            .line_width
+            .or(global.line_width)
             .unwrap_or_default();
         let indent_width = language
-            .and_then(|l| l.indent_width)
-            .or(global.and_then(|g| g.indent_width))
+            .indent_width
+            .or(global.indent_width)
             .unwrap_or_default();
 
         let line_ending = language
-            .and_then(|l| l.line_ending)
-            .or(global.and_then(|g| g.line_ending))
+            .line_ending
+            .or(global.line_ending)
             .unwrap_or_default();
 
-        let options = CssFormatOptions::new(
+        let trailing_newline = language
+            .trailing_newline
+            .or(global.trailing_newline)
+            .unwrap_or_default();
+
+        let mut options = CssFormatOptions::new(
             document_file_source
                 .to_css_file_source()
                 .unwrap_or_default(),
@@ -175,55 +231,39 @@ impl ServiceLanguage for CssLanguage {
         .with_indent_width(indent_width)
         .with_line_width(line_width)
         .with_line_ending(line_ending)
-        .with_quote_style(language.and_then(|l| l.quote_style).unwrap_or_default());
-        if let Some(overrides) = overrides {
-            overrides.to_override_css_format_options(path, options)
-        } else {
-            options
-        }
+        .with_quote_style(language.quote_style.unwrap_or_default())
+        .with_trailing_newline(trailing_newline);
+
+        overrides.apply_override_css_format_options(path, &mut options);
+
+        options
     }
 
     fn resolve_analyzer_options(
-        global: Option<&Settings>,
-        _language: Option<&Self::LinterSettings>,
+        global: &Settings,
+        _language: &Self::LinterSettings,
         _environment: Option<&Self::EnvironmentSettings>,
-
         file_path: &BiomePath,
         _file_source: &DocumentFileSource,
         suppression_reason: Option<&str>,
     ) -> AnalyzerOptions {
         let preferred_quote = global
-            .and_then(|global| {
-                global
-                    .languages
-                    .css
-                    .formatter
-                    .quote_style
-                    .map(|quote_style: QuoteStyle| {
-                        if quote_style == QuoteStyle::Single {
-                            PreferredQuote::Single
-                        } else {
-                            PreferredQuote::Double
-                        }
-                    })
+            .languages
+            .css
+            .formatter
+            .quote_style
+            .map(|quote_style: QuoteStyle| {
+                if quote_style == QuoteStyle::Single {
+                    PreferredQuote::Single
+                } else {
+                    PreferredQuote::Double
+                }
             })
             .unwrap_or_default();
 
         let configuration = AnalyzerConfiguration::default()
-            .with_rules(
-                global
-                    .map(|g| to_analyzer_rules(g, file_path.as_path()))
-                    .unwrap_or_default(),
-            )
-            .with_preferred_quote(preferred_quote)
-            .with_css_modules(global.is_some_and(|global| {
-                global
-                    .languages
-                    .css
-                    .parser
-                    .css_modules_enabled
-                    .is_some_and(|css_modules_enabled| css_modules_enabled.into())
-            }));
+            .with_rules(to_analyzer_rules(global, file_path.as_path()))
+            .with_preferred_quote(preferred_quote);
 
         AnalyzerOptions::default()
             .with_file_path(file_path.as_path())
@@ -231,95 +271,85 @@ impl ServiceLanguage for CssLanguage {
             .with_suppression_reason(suppression_reason)
     }
 
-    fn formatter_enabled_for_file_path(settings: Option<&Settings>, path: &Utf8Path) -> bool {
-        settings
-            .and_then(|settings| {
-                let overrides_activity =
-                    settings
-                        .override_settings
-                        .patterns
-                        .iter()
-                        .rev()
-                        .find_map(|pattern| {
-                            check_override_feature_activity(
-                                pattern.languages.css.formatter.enabled,
-                                pattern.formatter.enabled,
-                            )
-                            .filter(|_| {
-                                // Then check whether the path satisfies
-                                pattern.is_file_included(path)
-                            })
-                        });
+    fn linter_enabled_for_file_path(settings: &Settings, path: &Utf8Path) -> bool {
+        let overrides_activity =
+            settings
+                .override_settings
+                .patterns
+                .iter()
+                .rev()
+                .find_map(|pattern| {
+                    check_override_feature_activity(
+                        pattern.languages.css.linter.enabled,
+                        pattern.linter.enabled,
+                    )
+                    .filter(|_| {
+                        // Then check whether the path satisfies
+                        pattern.is_file_included(path)
+                    })
+                });
 
-                overrides_activity.or(check_feature_activity(
-                    settings.languages.css.formatter.enabled,
-                    settings.formatter.enabled,
-                ))
-            })
+        overrides_activity
+            .or(check_feature_activity(
+                settings.languages.css.linter.enabled,
+                settings.linter.enabled,
+            ))
             .unwrap_or_default()
             .into()
     }
 
-    fn assist_enabled_for_file_path(settings: Option<&Settings>, path: &Utf8Path) -> bool {
-        settings
-            .and_then(|settings| {
-                let overrides_activity =
-                    settings
-                        .override_settings
-                        .patterns
-                        .iter()
-                        .rev()
-                        .find_map(|pattern| {
-                            check_override_feature_activity(
-                                pattern.languages.css.assist.enabled,
-                                pattern.assist.enabled,
-                            )
-                            .filter(|_| {
-                                // Then check whether the path satisfies
-                                pattern.is_file_included(path)
-                            })
-                        });
+    fn formatter_enabled_for_file_path(settings: &Settings, path: &Utf8Path) -> bool {
+        let overrides_activity =
+            settings
+                .override_settings
+                .patterns
+                .iter()
+                .rev()
+                .find_map(|pattern| {
+                    check_override_feature_activity(
+                        pattern.languages.css.formatter.enabled,
+                        pattern.formatter.enabled,
+                    )
+                    .filter(|_| {
+                        // Then check whether the path satisfies
+                        pattern.is_file_included(path)
+                    })
+                });
 
-                overrides_activity.or(check_feature_activity(
-                    settings.languages.css.assist.enabled,
-                    settings.assist.enabled,
-                ))
-            })
+        overrides_activity
+            .or(check_feature_activity(
+                settings.languages.css.formatter.enabled,
+                settings.formatter.enabled,
+            ))
             .unwrap_or_default()
             .into()
     }
 
-    fn linter_enabled_for_file_path(settings: Option<&Settings>, path: &Utf8Path) -> bool {
-        settings
-            .and_then(|settings| {
-                let overrides_activity =
-                    settings
-                        .override_settings
-                        .patterns
-                        .iter()
-                        .rev()
-                        .find_map(|pattern| {
-                            check_override_feature_activity(
-                                pattern.languages.css.linter.enabled,
-                                pattern.linter.enabled,
-                            )
-                            .filter(|_| {
-                                // Then check whether the path satisfies
-                                pattern.is_file_included(path)
-                            })
-                        });
+    fn assist_enabled_for_file_path(settings: &Settings, path: &Utf8Path) -> bool {
+        let overrides_activity =
+            settings
+                .override_settings
+                .patterns
+                .iter()
+                .rev()
+                .find_map(|pattern| {
+                    check_override_feature_activity(
+                        pattern.languages.css.assist.enabled,
+                        pattern.assist.enabled,
+                    )
+                    .filter(|_| {
+                        // Then check whether the path satisfies
+                        pattern.is_file_included(path)
+                    })
+                });
 
-                overrides_activity.or(check_feature_activity(
-                    settings.languages.css.linter.enabled,
-                    settings.linter.enabled,
-                ))
-            })
+        overrides_activity
+            .or(check_feature_activity(
+                settings.languages.css.assist.enabled,
+                settings.assist.enabled,
+            ))
             .unwrap_or_default()
             .into()
-    }
-
-    fn resolve_environment(_settings: Option<&Settings>) -> Option<&Self::EnvironmentSettings> {
-        None
     }
 }
 
@@ -329,25 +359,31 @@ pub(crate) struct CssFileHandler;
 impl ExtensionHandler for CssFileHandler {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
-            parser: ParserCapabilities { parse: Some(parse) },
+            parser: ParserCapabilities {
+                parse: Some(parse),
+                parse_embedded_nodes: None,
+            },
             debug: DebugCapabilities {
                 debug_syntax_tree: Some(debug_syntax_tree),
                 debug_control_flow: None,
                 debug_formatter_ir: Some(debug_formatter_ir),
                 debug_type_info: None,
                 debug_registered_types: None,
-                debug_semantic_model: None,
+                debug_semantic_model: Some(debug_semantic_model),
             },
             analyzer: AnalyzerCapabilities {
                 lint: Some(lint),
                 code_actions: Some(code_actions),
                 rename: None,
                 fix_all: Some(fix_all),
+                update_snippets: None,
+                pull_diagnostics_and_actions: None,
             },
             formatter: FormatterCapabilities {
                 format: Some(format),
                 format_range: Some(format_range),
                 format_on_type: Some(format_on_type),
+                format_embedded: None,
             },
             search: SearchCapabilities {
                 search: Some(search),
@@ -362,50 +398,37 @@ impl ExtensionHandler for CssFileHandler {
     }
 }
 
-fn formatter_enabled(path: &Utf8Path, handle: &WorkspaceSettingsHandle) -> bool {
-    handle.formatter_enabled_for_file_path::<CssLanguage>(path)
+fn formatter_enabled(path: &Utf8Path, settings: &SettingsWithEditor) -> bool {
+    settings.formatter_enabled_for_file_path::<CssLanguage>(path)
 }
 
-fn linter_enabled(path: &Utf8Path, handle: &WorkspaceSettingsHandle) -> bool {
-    handle.linter_enabled_for_file_path::<CssLanguage>(path)
+fn linter_enabled(path: &Utf8Path, settings: &SettingsWithEditor) -> bool {
+    settings.linter_enabled_for_file_path::<CssLanguage>(path)
 }
 
-fn assist_enabled(path: &Utf8Path, handle: &WorkspaceSettingsHandle) -> bool {
-    handle.assist_enabled_for_file_path::<CssLanguage>(path)
+fn assist_enabled(path: &Utf8Path, settings: &SettingsWithEditor) -> bool {
+    settings.assist_enabled_for_file_path::<CssLanguage>(path)
 }
 
-fn search_enabled(_path: &Utf8Path, _handle: &WorkspaceSettingsHandle) -> bool {
+fn search_enabled(_path: &Utf8Path, _settings: &SettingsWithEditor) -> bool {
     true
 }
 
 fn parse(
     biome_path: &BiomePath,
-    _file_source: DocumentFileSource,
+    file_source: DocumentFileSource,
     text: &str,
-    handle: WorkspaceSettingsHandle,
+    settings: &SettingsWithEditor,
     cache: &mut NodeCache,
 ) -> ParseResult {
-    let settings = handle.settings();
-    let mut options = CssParserOptions {
-        allow_wrong_line_comments: settings
-            .and_then(|s| s.languages.css.parser.allow_wrong_line_comments)
-            .unwrap_or_default()
-            .into(),
-        css_modules: settings
-            .and_then(|s| s.languages.css.parser.css_modules_enabled)
-            .unwrap_or_default()
-            .into(),
-        grit_metavariables: false,
-    };
-    if let Some(settings) = settings {
-        options = settings
-            .override_settings
-            .to_override_css_parser_options(biome_path, options);
-    }
-    let parse = biome_css_parser::parse_css_with_cache(text, cache, options);
+    let options = settings.parse_options::<CssLanguage>(biome_path, &file_source);
+
+    let source_type = file_source.to_css_file_source().unwrap_or_default();
+    let parse = biome_css_parser::parse_css_with_cache(text, source_type, cache, options);
+
     ParseResult {
         any_parse: parse.into(),
-        language: None,
+        language: Some(file_source),
     }
 }
 
@@ -422,7 +445,7 @@ fn debug_formatter_ir(
     biome_path: &BiomePath,
     document_file_source: &DocumentFileSource,
     parse: AnyParse,
-    settings: WorkspaceSettingsHandle,
+    settings: &SettingsWithEditor,
 ) -> Result<String, WorkspaceError> {
     let options = settings.format_options::<CssLanguage>(biome_path, document_file_source);
 
@@ -433,12 +456,18 @@ fn debug_formatter_ir(
     Ok(root_element.to_string())
 }
 
+fn debug_semantic_model(_path: &BiomePath, parse: AnyParse) -> Result<String, WorkspaceError> {
+    let tree: AnyCssRoot = parse.tree();
+    let model = semantic_model(&tree);
+    Ok(model.to_string())
+}
+
 #[tracing::instrument(level = "debug", skip(parse))]
 fn format(
     biome_path: &BiomePath,
     document_file_source: &DocumentFileSource,
     parse: AnyParse,
-    settings: WorkspaceSettingsHandle,
+    settings: &SettingsWithEditor,
 ) -> Result<Printed, WorkspaceError> {
     let options = settings.format_options::<CssLanguage>(biome_path, document_file_source);
 
@@ -455,7 +484,7 @@ fn format_range(
     biome_path: &BiomePath,
     document_file_source: &DocumentFileSource,
     parse: AnyParse,
-    settings: WorkspaceSettingsHandle,
+    settings: &SettingsWithEditor,
     range: TextRange,
 ) -> Result<Printed, WorkspaceError> {
     let options = settings.format_options::<CssLanguage>(biome_path, document_file_source);
@@ -469,7 +498,7 @@ fn format_on_type(
     biome_path: &BiomePath,
     document_file_source: &DocumentFileSource,
     parse: AnyParse,
-    settings: WorkspaceSettingsHandle,
+    settings: &SettingsWithEditor,
     offset: TextSize,
 ) -> Result<Printed, WorkspaceError> {
     let options = settings.format_options::<CssLanguage>(biome_path, document_file_source);
@@ -503,10 +532,16 @@ fn format_on_type(
 }
 
 fn lint(params: LintParams) -> LintResults {
-    let _ =
-        debug_span!("Linting CSS file", path =? params.path, language =? params.language).entered();
-    let workspace_settings = &params.workspace;
-    let analyzer_options = workspace_settings.analyzer_options::<CssLanguage>(
+    let Some(file_source) = params.language.to_css_file_source() else {
+        return LintResults {
+            diagnostics: vec![],
+            errors: 0,
+            skipped_diagnostics: 0,
+        };
+    };
+
+    let settings = &params.settings;
+    let analyzer_options = settings.analyzer_options::<CssLanguage>(
         params.path,
         &params.language,
         params.suppression_reason.as_deref(),
@@ -514,11 +549,11 @@ fn lint(params: LintParams) -> LintResults {
     let tree = params.parse.tree();
 
     let (enabled_rules, disabled_rules, analyzer_options) =
-        AnalyzerVisitorBuilder::new(params.workspace.settings(), analyzer_options)
-            .with_only(&params.only)
-            .with_skip(&params.skip)
+        AnalyzerVisitorBuilder::new(settings.as_ref(), analyzer_options)
+            .with_only(params.only)
+            .with_skip(params.skip)
             .with_path(params.path.as_path())
-            .with_enabled_rules(&params.enabled_rules)
+            .with_enabled_selectors(params.enabled_selectors)
             .with_project_layout(params.project_layout.clone())
             .finish();
 
@@ -530,16 +565,28 @@ fn lint(params: LintParams) -> LintResults {
     };
 
     let mut process_lint = ProcessLint::new(&params);
-
+    let css_services = CssAnalyzerServices {
+        semantic_model: params.snippet_services.and_then(|s| {
+            s.as_css_services()
+                .and_then(|services| services.semantic_model.as_ref())
+        }),
+        file_source,
+    };
     let (_, analyze_diagnostics) = analyze(
         &tree,
         filter,
         &analyzer_options,
+        css_services,
         &params.plugins,
         |signal| process_lint.process_signal(signal),
     );
 
-    process_lint.into_result(params.parse.into_diagnostics(), analyze_diagnostics)
+    process_lint.into_result(
+        params
+            .parse
+            .into_serde_diagnostics(params.diagnostic_offset),
+        analyze_diagnostics,
+    )
 }
 
 #[tracing::instrument(level = "debug", skip(params))]
@@ -547,7 +594,7 @@ pub(crate) fn code_actions(params: CodeActionsParams) -> PullActionsResult {
     let CodeActionsParams {
         parse,
         range,
-        workspace,
+        settings,
         path,
         module_graph: _,
         project_layout,
@@ -558,11 +605,11 @@ pub(crate) fn code_actions(params: CodeActionsParams) -> PullActionsResult {
         suppression_reason,
         plugins,
         categories,
+        action_offset,
+        document_services,
     } = params;
-    let _ = debug_span!("Code actions CSS", range =? range, path =? path).entered();
     let tree = parse.tree();
-    let _ = trace_span!("Parsed file", tree =? tree).entered();
-    let Some(_) = language.to_css_file_source() else {
+    let Some(file_source) = language.to_css_file_source() else {
         error!("Could not determine the file source of the file");
         return PullActionsResult {
             actions: Vec::new(),
@@ -570,14 +617,14 @@ pub(crate) fn code_actions(params: CodeActionsParams) -> PullActionsResult {
     };
 
     let analyzer_options =
-        workspace.analyzer_options::<CssLanguage>(path, &language, suppression_reason.as_deref());
+        settings.analyzer_options::<CssLanguage>(path, &language, suppression_reason.as_deref());
     let mut actions = Vec::new();
     let (enabled_rules, disabled_rules, analyzer_options) =
-        AnalyzerVisitorBuilder::new(params.workspace.settings(), analyzer_options)
-            .with_only(&only)
-            .with_skip(&skip)
+        AnalyzerVisitorBuilder::new(settings.as_ref(), analyzer_options)
+            .with_only(only)
+            .with_skip(skip)
             .with_path(path.as_path())
-            .with_enabled_rules(&rules)
+            .with_enabled_selectors(rules)
             .with_project_layout(project_layout)
             .finish();
 
@@ -589,50 +636,62 @@ pub(crate) fn code_actions(params: CodeActionsParams) -> PullActionsResult {
     };
 
     info!("CSS runs the analyzer");
+    let css_services = CssAnalyzerServices {
+        semantic_model: document_services
+            .as_css_services()
+            .and_then(|services| services.semantic_model.as_ref()),
+        file_source,
+    };
 
-    analyze(&tree, filter, &analyzer_options, &plugins, |signal| {
-        actions.extend(signal.actions().into_code_action_iter().map(|item| {
-            CodeAction {
-                category: item.category.clone(),
-                rule_name: item
-                    .rule_name
-                    .map(|(group, name)| (Cow::Borrowed(group), Cow::Borrowed(name))),
-                suggestion: item.suggestion,
-            }
-        }));
+    analyze(
+        &tree,
+        filter,
+        &analyzer_options,
+        css_services,
+        &plugins,
+        |signal| {
+            actions.extend(signal.actions().into_code_action_iter().map(|item| {
+                CodeAction {
+                    category: item.category.clone(),
+                    rule_name: item
+                        .rule_name
+                        .map(|(group, name)| (Cow::Borrowed(group), Cow::Borrowed(name))),
+                    offset: action_offset,
+                    suggestion: item.suggestion,
+                }
+            }));
 
-        ControlFlow::<Never>::Continue(())
-    });
+            ControlFlow::<Never>::Continue(())
+        },
+    );
 
     PullActionsResult { actions }
 }
 
-/// If applies all the safe fixes to the given syntax tree.
+/// Applies all the safe fixes to the given syntax tree.
 pub(crate) fn fix_all(params: FixAllParams) -> Result<FixFileResult, WorkspaceError> {
-    let mut tree: CssRoot = params.parse.tree();
-    let Some(settings) = params.workspace.settings() else {
-        return Ok(FixFileResult {
-            actions: Vec::new(),
-            errors: 0,
-            skipped_suggested_fixes: 0,
-            code: tree.syntax().to_string(),
-        });
+    let mut tree: AnyCssRoot = params.parse.tree();
+    let Some(file_source) = params.document_file_source.to_css_file_source() else {
+        error!("Could not determine the file source of the file");
+        return Ok(FixFileResult::default());
     };
-
     // Compute final rules (taking `overrides` into account)
-    let rules = settings.as_linter_rules(params.biome_path.as_path());
-    let analyzer_options = params.workspace.analyzer_options::<CssLanguage>(
+    let rules = params
+        .settings
+        .as_ref()
+        .as_linter_rules(params.biome_path.as_path());
+    let analyzer_options = params.settings.analyzer_options::<CssLanguage>(
         params.biome_path,
         &params.document_file_source,
         params.suppression_reason.as_deref(),
     );
     let (enabled_rules, disabled_rules, analyzer_options) =
-        AnalyzerVisitorBuilder::new(params.workspace.settings(), analyzer_options)
-            .with_only(&params.only)
-            .with_skip(&params.skip)
+        AnalyzerVisitorBuilder::new(params.settings.as_ref(), analyzer_options)
+            .with_only(params.only)
+            .with_skip(params.skip)
             .with_path(params.biome_path.as_path())
-            .with_enabled_rules(&params.enabled_rules)
-            .with_project_layout(params.project_layout)
+            .with_enabled_selectors(params.enabled_rules)
+            .with_project_layout(params.project_layout.clone())
             .finish();
 
     let filter = AnalysisFilter {
@@ -642,106 +701,49 @@ pub(crate) fn fix_all(params: FixAllParams) -> Result<FixFileResult, WorkspaceEr
         range: None,
     };
 
-    let mut actions = Vec::new();
-    let mut skipped_suggested_fixes = 0;
-    let mut errors: u16 = 0;
+    let mut process_fix_all = ProcessFixAll::new(
+        &params,
+        rules,
+        tree.syntax().text_range_with_trivia().len().into(),
+    );
 
     loop {
+        let css_services = CssAnalyzerServices {
+            semantic_model: None,
+            file_source,
+        };
+
         let (action, _) = analyze(
             &tree,
             filter,
             &analyzer_options,
+            css_services,
             &params.plugins,
-            |signal| {
-                let current_diagnostic = signal.diagnostic();
-
-                if let Some(diagnostic) = current_diagnostic.as_ref() {
-                    if is_diagnostic_error(diagnostic, rules.as_deref()) {
-                        errors += 1;
-                    }
-                }
-
-                for action in signal.actions() {
-                    // suppression actions should not be part of the fixes (safe or suggested)
-                    if action.is_suppression() {
-                        continue;
-                    }
-
-                    match params.fix_file_mode {
-                        FixFileMode::SafeFixes => {
-                            if action.applicability == Applicability::MaybeIncorrect {
-                                skipped_suggested_fixes += 1;
-                            }
-                            if action.applicability == Applicability::Always {
-                                errors = errors.saturating_sub(1);
-                                return ControlFlow::Break(action);
-                            }
-                        }
-                        FixFileMode::SafeAndUnsafeFixes => {
-                            if matches!(
-                                action.applicability,
-                                Applicability::Always | Applicability::MaybeIncorrect
-                            ) {
-                                errors = errors.saturating_sub(1);
-                                return ControlFlow::Break(action);
-                            }
-                        }
-                        FixFileMode::ApplySuppressions => {
-                            // TODO: to implement
-                        }
-                    }
-                }
-
-                ControlFlow::Continue(())
-            },
+            |signal| process_fix_all.process_signal(signal),
         );
 
-        match action {
-            Some(action) => {
-                if let (root, Some((range, _))) =
-                    action.mutation.commit_with_text_range_and_edit(true)
-                {
-                    tree = match CssRoot::cast(root) {
-                        Some(tree) => tree,
-                        None => {
-                            return Err(WorkspaceError::RuleError(
-                                RuleError::ReplacedRootWithNonRootError {
-                                    rule_name: action.rule_name.map(|(group, rule)| {
-                                        (Cow::Borrowed(group), Cow::Borrowed(rule))
-                                    }),
-                                },
-                            ));
-                        }
-                    };
-                    actions.push(FixAction {
-                        rule_name: action
-                            .rule_name
-                            .map(|(group, rule)| (Cow::Borrowed(group), Cow::Borrowed(rule))),
-                        range,
-                    });
-                }
-            }
-            None => {
-                let code = if params.should_format {
-                    format_node(
-                        params.workspace.format_options::<CssLanguage>(
+        let result = process_fix_all.process_action(action, |root| {
+            tree = match AnyCssRoot::cast(root) {
+                Some(tree) => tree,
+                None => return None,
+            };
+            Some(tree.syntax().text_range_with_trivia().len().into())
+        })?;
+
+        if result.is_none() {
+            return process_fix_all.finish(|| {
+                Ok(if params.should_format {
+                    Either::Left(format_node(
+                        params.settings.format_options::<CssLanguage>(
                             params.biome_path,
                             &params.document_file_source,
                         ),
                         tree.syntax(),
-                    )?
-                    .print()?
-                    .into_code()
+                    ))
                 } else {
-                    tree.syntax().to_string()
-                };
-                return Ok(FixFileResult {
-                    code,
-                    skipped_suggested_fixes,
-                    actions,
-                    errors: errors.into(),
-                });
-            }
+                    Either::Right(tree.syntax().to_string())
+                })
+            });
         }
     }
 }
@@ -754,9 +756,9 @@ mod test {
     #[test]
     fn inherit_global_format_settings() {
         let format_options = CssLanguage::resolve_format_options(
-            Some(&FormatSettings::default()),
-            None,
-            None,
+            &FormatSettings::default(),
+            &OverrideSettings::default(),
+            &CssFormatterSettings::default(),
             &BiomePath::new(""),
             &DocumentFileSource::Css(CssFileSource::css()),
         );

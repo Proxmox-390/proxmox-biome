@@ -14,6 +14,7 @@ use {
 ///
 /// It is a logic error for `start` to be greater than `end`.
 #[derive(Default, Copy, Clone, Eq, PartialEq, Hash)]
+#[repr(C)]
 pub struct TextRange {
     // Invariant: start <= end
     start: TextSize,
@@ -23,6 +24,12 @@ pub struct TextRange {
 impl fmt::Debug for TextRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}..{}", self.start().raw, self.end().raw)
+    }
+}
+
+impl fmt::Display for TextRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self, f)
     }
 }
 

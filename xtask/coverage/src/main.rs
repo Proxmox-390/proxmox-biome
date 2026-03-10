@@ -1,5 +1,5 @@
 use pico_args::Arguments;
-use xtask::{Result, project_root, pushd};
+use xtask_glue::{Result, project_root, pushd};
 
 use xtask_coverage::{SummaryDetailLevel, compare::coverage_compare, run};
 
@@ -42,16 +42,18 @@ OPTIONS
     --markdown          Emits supported output into markdown format. Supported by `compare` subcommand.
     --json              Prints the test results in JSON. This mode will send all other test output and user messages to stderr.
     --detailed=[debug]  Prints a detailed summary at the end for all failing tests. Includes in depth details if set to `debug`.
-    --suites=<IDS>      Runs the specified tests suites. Use comma as separator. 
+    --suites=<IDS>      Runs the specified tests suites. Use comma as separator.
                         Valid values are:
                             *: will run all suites
                             js: will run all javascript suites; Same as \"js/262\";
                             ts: will run all typescript suites; Same as \"ts/microsoft,ts/babel\";
                             jsx: will run all jsx suites; Same as \"jsx/babel\";
+                            markdown: will run all markdown suites; Same as \"markdown/commonmark\";
                             js/262: will run https://github.com/tc39/test262/tree/main/test;
                             ts/microsoft: will run https://github.com/microsoft/Typescript/tree/main/tests/cases
                             ts/babel: will run https://github.com/babel/babel/tree/main/packages/babel-parser/test/fixtures/typescript
                             jsx/babel: will run https://github.com/babel/babel/tree/main/packages/babel-parser/test/fixtures/jsx/basic
+                            markdown/commonmark: will run CommonMark spec tests (https://spec.commonmark.org/)
                         Default is \"*\".
     --filter=<file>     Filters out tests that don't match the query.
     --help              Prints this help.

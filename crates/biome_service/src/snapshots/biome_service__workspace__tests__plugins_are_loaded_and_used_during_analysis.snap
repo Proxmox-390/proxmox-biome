@@ -6,6 +6,40 @@ expression: result.diagnostics
     Diagnostic {
         category: Some(
             Category {
+                name: "plugin",
+                link: None,
+            },
+        ),
+        severity: Error,
+        description: "Prefer object spread instead of `Object.assign()`",
+        message: "Prefer object spread instead of `Object.assign()`",
+        advices: Advices {
+            advices: [],
+        },
+        verbose_advices: Advices {
+            advices: [],
+        },
+        location: Location {
+            path: Some(
+                File(
+                    "/project/a.ts",
+                ),
+            ),
+            span: Some(
+                24..38,
+            ),
+            source_code: None,
+        },
+        tags: DiagnosticTags(
+            BitFlags<DiagnosticTag> {
+                bits: 0b0,
+            },
+        ),
+        source: None,
+    },
+    Diagnostic {
+        category: Some(
+            Category {
                 name: "lint/correctness/noUnusedVariables",
                 link: Some(
                     "https://biomejs.dev/linter/rules/no-unused-variables",
@@ -19,7 +53,7 @@ expression: result.diagnostics
             advices: [
                 Log(
                     Info,
-                    "Unused variables are often the result of an incomplete refactoring, typos, or other sources of bugs.",
+                    "Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.",
                 ),
                 Log(
                     Info,
@@ -77,40 +111,6 @@ expression: result.diagnostics
             BitFlags<DiagnosticTag> {
                 bits: 0b1,
                 flags: Fixable,
-            },
-        ),
-        source: None,
-    },
-    Diagnostic {
-        category: Some(
-            Category {
-                name: "plugin",
-                link: None,
-            },
-        ),
-        severity: Error,
-        description: "Prefer object spread instead of `Object.assign()`",
-        message: "Prefer object spread instead of `Object.assign()`",
-        advices: Advices {
-            advices: [],
-        },
-        verbose_advices: Advices {
-            advices: [],
-        },
-        location: Location {
-            path: Some(
-                File(
-                    "/project/a.ts",
-                ),
-            ),
-            span: Some(
-                24..38,
-            ),
-            source_code: None,
-        },
-        tags: DiagnosticTags(
-            BitFlags<DiagnosticTag> {
-                bits: 0b0,
             },
         ),
         source: None,

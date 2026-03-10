@@ -240,7 +240,7 @@ impl<K: std::hash::Hash + Eq, V> CommentsMap<K, V> {
     }
 
     /// Returns an iterator over all leading, dangling, and trailing parts of `key`.
-    pub fn parts(&self, key: &K) -> PartsIterator<V> {
+    pub fn parts(&self, key: &K) -> PartsIterator<'_, V> {
         match self.index.get(key) {
             None => PartsIterator::Slice([].iter()),
             Some(entry) => PartsIterator::from_entry(entry, self),
@@ -475,7 +475,7 @@ struct InOrderEntry {
     trailing_end: Option<PartIndex>,
 
     #[cfg(feature = "countme")]
-    _count: countme::Count<InOrderEntry>,
+    _count: countme::Count<Self>,
 }
 
 impl InOrderEntry {
@@ -589,10 +589,10 @@ impl InOrderEntry {
 
 #[derive(Debug)]
 struct OutOfOrderEntry {
-    /// Index into the [CommentsMap::out_of_order] vector at which offset the leaading vec is stored.
+    /// Index into the [CommentsMap::out_of_order] vector at which offset the leading vec is stored.
     leading_index: usize,
     #[cfg(feature = "countme")]
-    _count: countme::Count<OutOfOrderEntry>,
+    _count: countme::Count<Self>,
 }
 
 impl OutOfOrderEntry {

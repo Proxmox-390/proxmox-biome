@@ -4,11 +4,10 @@ use biome_analyze::{
 };
 use biome_aria_metadata::AriaRole;
 use biome_console::markup;
-use biome_deserialize_macros::Deserializable;
 use biome_diagnostics::Severity;
 use biome_js_syntax::jsx_ext::AnyJsxElement;
 use biome_rowan::{AstNode, BatchMutationExt};
-use serde::{Deserialize, Serialize};
+use biome_rule_options::use_valid_aria_role::UseValidAriaRoleOptions;
 
 declare_lint_rule! {
     /// Elements with ARIA roles must use a valid, non-abstract ARIA role.
@@ -45,13 +44,37 @@ declare_lint_rule! {
     ///
     /// ## Options
     ///
+    ///
+    /// ### `allowInvalidRoles`
+    ///
+    /// It allows specifying a list of roles that might be invalid otherwise
+    ///
     /// ```json,options
     /// {
     ///     "options": {
-    ///         "allowInvalidRoles": ["invalid-role", "text"],
+    ///         "allowInvalidRoles": ["datepicker"]
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// ```jsx,use_options
+    /// <div role="datepicker"></div>
+    /// ```
+    ///
+    /// ### `ignoreNonDom`
+    ///
+    /// Use this option to ignore non-DOM elements, such as components
+    ///
+    /// ```json,options
+    /// {
+    ///     "options": {
     ///         "ignoreNonDom": true
     ///     }
     /// }
+    /// ```
+    ///
+    /// ```jsx,use_options
+    /// <Datepicker role="foo"></Datepicker>
     /// ```
     ///
     /// ## Accessibility guidelines
@@ -75,25 +98,17 @@ declare_lint_rule! {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Deserializable, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
-pub struct ValidAriaRoleOptions {
-    pub allow_invalid_roles: Box<[Box<str>]>,
-    pub ignore_non_dom: bool,
-}
-
 impl Rule for UseValidAriaRole {
     type Query = Ast<AnyJsxElement>;
     type State = ();
     type Signals = Option<Self::State>;
-    type Options = Box<ValidAriaRoleOptions>;
+    type Options = UseValidAriaRoleOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
         let options = ctx.options();
 
-        let ignore_non_dom = options.ignore_non_dom;
+        let ignore_non_dom = options.ignore_non_dom();
         let allowed_invalid_roles = &options.allow_invalid_roles;
 
         if ignore_non_dom && node.is_custom_component() {
@@ -112,6 +127,7 @@ impl Rule for UseValidAriaRole {
             AriaRole::from_roles(val).is_some()
                 || allowed_invalid_roles
                     .iter()
+                    .flatten()
                     .any(|role| role.as_ref() == val)
         });
 

@@ -1,8 +1,10 @@
 mod css_target_language;
 mod js_target_language;
+mod json_target_language;
 
 pub use css_target_language::CssTargetLanguage;
 pub use js_target_language::JsTargetLanguage;
+pub use json_target_language::JsonTargetLanguage;
 
 use camino::Utf8Path;
 use grit_util::{AnalysisLogs, Ast, CodeRange, EffectRange, Language, Parser, SnippetTree};
@@ -18,6 +20,7 @@ use biome_string_case::StrOnlyExtension;
 use crate::CompileError;
 use crate::grit_css_parser::GritCssParser;
 use crate::grit_js_parser::GritJsParser;
+use crate::grit_json_parser::GritJsonParser;
 use crate::grit_target_node::{GritTargetNode, GritTargetSyntaxKind};
 use crate::grit_tree::GritTargetTree;
 
@@ -76,17 +79,16 @@ macro_rules! generate_target_language {
 
         #[cfg(feature = "schema")]
         impl schemars::JsonSchema for GritTargetLanguage {
-            fn schema_name() -> String {
-                "GritTargetLanguage".to_owned()
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                std::borrow::Cow::Borrowed("GritTargetLanguage")
             }
 
-            fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
-                schemars::schema::Schema::Object(schemars::schema::SchemaObject {
-                    enum_values: Some(vec![
-                        $(serde_json::json!($name)),+
-                    ]),
-                    ..Default::default()
-                })
+            fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                let mut map = serde_json::Map::new();
+                map.insert("enum".into(), vec![
+                    $(serde_json::json!($name)),+
+                ].into());
+                schemars::Schema::from(map)
             }
         }
 
@@ -207,7 +209,8 @@ macro_rules! generate_target_language {
 
 generate_target_language! {
     [CssTargetLanguage, GritCssParser, "CSS"],
-    [JsTargetLanguage, GritJsParser, "JavaScript"]
+    [JsTargetLanguage, GritJsParser, "JavaScript"],
+    [JsonTargetLanguage, GritJsonParser, "JSON"]
 }
 
 impl Default for GritTargetLanguage {
@@ -230,6 +233,7 @@ impl GritTargetLanguage {
         {
             GritSyntaxKind::CSS_KW => Some(Self::CssTargetLanguage(CssTargetLanguage)),
             GritSyntaxKind::JS_KW => Some(Self::JsTargetLanguage(JsTargetLanguage)),
+            GritSyntaxKind::JSON_KW => Some(Self::JsonTargetLanguage(JsonTargetLanguage)),
             _ => None,
         }
     }
@@ -241,6 +245,7 @@ impl GritTargetLanguage {
             "cjs" | "js" | "jsx" | "mjs" | "ts" | "tsx" => {
                 Some(Self::JsTargetLanguage(JsTargetLanguage))
             }
+            "json" | "jsonc" => Some(Self::JsonTargetLanguage(JsonTargetLanguage)),
             _ => None,
         }
     }

@@ -4,6 +4,7 @@ use biome_console::markup;
 use biome_css_syntax::CssDeclarationOrRuleList;
 use biome_diagnostics::Severity;
 use biome_rowan::{AstNode, TextRange};
+use biome_rule_options::no_duplicate_custom_properties::NoDuplicateCustomPropertiesOptions;
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 
@@ -48,18 +49,19 @@ impl Rule for NoDuplicateCustomProperties {
     type Query = Semantic<CssDeclarationOrRuleList>;
     type State = (TextRange, (TextRange, String));
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoDuplicateCustomPropertiesOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Option<Self::State> {
         let node = ctx.query();
         let model = ctx.model();
+        let root = ctx.root();
 
         let rule = model.get_rule_by_range(node.range())?;
 
         let mut seen: FxHashMap<Box<str>, TextRange> = FxHashMap::default();
 
         for declaration in rule.declarations() {
-            let prop = declaration.property();
+            let prop = declaration.property(&root);
             let prop_name = prop.value().ok()?;
             let prop_range = prop.range();
 

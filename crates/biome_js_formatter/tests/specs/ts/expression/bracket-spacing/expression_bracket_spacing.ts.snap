@@ -2,6 +2,7 @@
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: ts/expression/bracket-spacing/expression_bracket_spacing.ts
 ---
+
 # Input
 
 ```ts
@@ -97,6 +98,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```ts
@@ -196,6 +199,7 @@ type GenericTypeExpression<A extends { a: string }> =
 		baz: number;
 		zzz: boolean;
 	}>;
+
 ```
 
 ## Output 1
@@ -215,6 +219,8 @@ Bracket spacing: false
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```ts
@@ -314,4 +320,5 @@ type GenericTypeExpression<A extends {a: string}> =
 		baz: number;
 		zzz: boolean;
 	}>;
+
 ```

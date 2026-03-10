@@ -121,7 +121,13 @@ pub enum ReactLibrary {
 impl ReactLibrary {
     pub const fn import_names(self) -> &'static [&'static str] {
         match self {
-            Self::React => &["react", "preact/compat", "preact/hooks"],
+            Self::React => &[
+                "react",
+                "preact/compat",
+                "preact/hooks",
+                "@rbxts/react",
+                "@rbxts-js/react",
+            ],
             Self::ReactDOM => &["react-dom"],
         }
     }
@@ -137,7 +143,7 @@ impl ReactLibrary {
 /// List of valid [`React` API]
 ///
 /// [`React` API]: https://reactjs.org/docs/react-api.html
-const VALID_REACT_API: [&str; 29] = [
+const VALID_REACT_API: [&str; 31] = [
     "Component",
     "PureComponent",
     "memo",
@@ -167,6 +173,8 @@ const VALID_REACT_API: [&str; 29] = [
     "useTransition",
     "useId",
     "useSyncExternalStore",
+    "Activity",
+    "useEffectEvent",
 ];
 
 /// Checks if the current [JsCallExpression] is a potential [`React` API].
@@ -270,7 +278,7 @@ fn is_react_export(binding: &Binding, lib: ReactLibrary) -> bool {
 }
 
 fn is_named_react_export(binding: &Binding, lib: ReactLibrary, name: &str) -> Option<bool> {
-    let ident = JsIdentifierBinding::cast_ref(binding.syntax())?;
+    let ident = JsIdentifierBinding::cast_ref(&binding.syntax())?;
     let import_specifier = ident.parent::<AnyJsNamedImportSpecifier>()?;
     let name_token = match &import_specifier {
         AnyJsNamedImportSpecifier::JsNamedImportSpecifier(named_import) => {
@@ -301,28 +309,31 @@ pub(crate) fn is_global_react_import(binding: &JsIdentifierBinding, lib: ReactLi
     {
         return false;
     };
+
     let Some(decl) = binding.declaration() else {
         return false;
     };
+
     // This must be a default import or a namespace import
-    let syntax = match decl {
-        AnyJsBindingDeclaration::JsNamedImportSpecifier(specifier) => {
-            if !specifier.name().is_ok_and(|name| name.is_default()) {
-                return false;
-            }
-            specifier.into_syntax()
-        }
-        AnyJsBindingDeclaration::JsDefaultImportSpecifier(specifier) => specifier.into_syntax(),
-        AnyJsBindingDeclaration::JsNamespaceImportSpecifier(specifier) => specifier.into_syntax(),
-        _ => {
-            return false;
-        }
-    };
-    // Check import source
-    syntax
-        .ancestors()
-        .skip(1)
-        .find_map(JsImport::cast)
-        .and_then(|import| import.source_text().ok())
-        .is_some_and(|source| lib.import_names().contains(&source.text()))
+    matches!(
+        decl,
+        AnyJsBindingDeclaration::JsDefaultImportSpecifier(_)
+            | AnyJsBindingDeclaration::JsNamespaceImportSpecifier(_)
+    ) || matches!(
+        decl,
+        AnyJsBindingDeclaration::JsNamedImportSpecifier(spec)
+            if spec.name().is_ok_and(|name| name.is_default())
+    )
+
+    // We don't check the import source here because tsc doesn't require that `React` is imported
+    // from the `react` package either.
+}
+
+/// Checks if `binding` matches a custom JSX factory identifier.
+/// This is used when `jsxRuntime` is `ReactClassic` and custom JSX factories are configured
+/// via tsconfig.json's `jsxFactory` or `jsxFragmentFactory` options.
+pub(crate) fn is_jsx_factory_import(binding: &JsIdentifierBinding, factory_name: &str) -> bool {
+    binding
+        .name_token()
+        .is_ok_and(|name| name.text_trimmed() == factory_name)
 }

@@ -1,18 +1,17 @@
-use std::collections::BTreeMap;
-
-use biome_css_syntax::CssRoot;
-use biome_rowan::{AstNode, TextRange};
+use biome_css_syntax::AnyCssRoot;
+use biome_rowan::{AstNode, AstPtr, TextRange};
 use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
 
 use super::model::{
     CssGlobalCustomVariable, CssModelDeclaration, Rule, RuleId, Selector, SemanticModel,
     SemanticModelData, Specificity,
 };
 use crate::events::SemanticEvent;
-use crate::model::RuleNode;
+use crate::model::AnyRuleStart;
 
 pub struct SemanticModelBuilder {
-    root: CssRoot,
+    root: AnyCssRoot,
     /// List of all top-level rules in the CSS file
     rules: Vec<Rule>,
     global_custom_variables: FxHashMap<String, CssGlobalCustomVariable>,
@@ -27,7 +26,7 @@ pub struct SemanticModelBuilder {
 }
 
 impl SemanticModelBuilder {
-    pub fn new(root: CssRoot) -> Self {
+    pub fn new(root: AnyCssRoot) -> Self {
         Self {
             root,
             rules: Vec::new(),
@@ -40,15 +39,90 @@ impl SemanticModelBuilder {
         }
     }
 
+    pub fn get_last_parent_selector_rule(&self) -> Option<&Rule> {
+        let mut iterator = self.current_rule_stack.iter().rev();
+        let mut current_parent_id = iterator
+            .next()
+            .and_then(|rule_id| self.rules_by_id.get(rule_id))
+            .and_then(|rule| rule.parent_id);
+
+        loop {
+            if let Some(parent_id) = &current_parent_id {
+                let rule = self.rules_by_id.get(parent_id);
+                if let Some(rule) = rule {
+                    let typed_node = rule.node.to_node(self.root.syntax());
+                    if matches!(
+                        typed_node,
+                        AnyRuleStart::CssMediaAtRule(_) | AnyRuleStart::CssSupportsAtRule(_)
+                    ) {
+                        current_parent_id = iterator
+                            .next()
+                            .and_then(|rule_id| self.rules_by_id.get(rule_id))
+                            .and_then(|rule| rule.parent_id);
+                    } else {
+                        return Some(rule);
+                    }
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+    }
+
+    pub fn get_parent_selector_at(&self, index: usize) -> Option<&Rule> {
+        let mut iterator = self.current_rule_stack.iter().rev();
+        let mut current_index = 1;
+        let mut current_parent_id = iterator
+            .next()
+            .and_then(|rule_id| self.rules_by_id.get(rule_id))
+            .and_then(|rule| rule.parent_id);
+
+        loop {
+            if let Some(parent_id) = &current_parent_id {
+                let rule = self.rules_by_id.get(parent_id);
+                if let Some(rule) = rule {
+                    let typed_node = rule.node.to_node(self.root.syntax());
+                    if matches!(
+                        typed_node,
+                        AnyRuleStart::CssMediaAtRule(_) | AnyRuleStart::CssSupportsAtRule(_)
+                    ) {
+                        current_parent_id = iterator
+                            .next()
+                            .and_then(|rule_id| self.rules_by_id.get(rule_id))
+                            .and_then(|rule| rule.parent_id);
+                    } else {
+                        if current_index == index {
+                            return Some(rule);
+                        }
+
+                        current_parent_id = iterator
+                            .next()
+                            .and_then(|rule_id| self.rules_by_id.get(rule_id))
+                            .and_then(|rule| rule.parent_id);
+                        current_index += 1;
+                    }
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+    }
+
     pub fn build(self) -> SemanticModel {
         let data = SemanticModelData {
-            root: self.root,
             rules: self.rules,
             global_custom_variables: self.global_custom_variables,
             range_to_rule: self.range_to_rule,
             rules_by_id: self.rules_by_id,
         };
-        SemanticModel::new(data)
+        SemanticModel::new(
+            data,
+            self.root.syntax().as_send().expect("To be a root node"),
+        )
     }
 
     #[inline]
@@ -62,8 +136,7 @@ impl SemanticModelBuilder {
 
                 let new_rule = Rule {
                     id: new_rule_id,
-                    // SAFETY: RuleStart event checks for the node kind
-                    node: RuleNode::cast(node.clone()).unwrap(),
+                    node: AstPtr::new(&node),
                     selectors: Vec::new(),
                     declarations: Vec::new(),
                     parent_id,
@@ -71,10 +144,10 @@ impl SemanticModelBuilder {
                     specificity: Specificity::default(),
                 };
 
-                if let Some(&parent_id) = self.current_rule_stack.last() {
-                    if let Some(parent_rule) = self.rules_by_id.get_mut(&parent_id) {
-                        parent_rule.child_ids.push(new_rule_id);
-                    }
+                if let Some(&parent_id) = self.current_rule_stack.last()
+                    && let Some(parent_rule) = self.rules_by_id.get_mut(&parent_id)
+                {
+                    parent_rule.child_ids.push(new_rule_id);
                 }
 
                 self.rules_by_id.insert(new_rule_id, new_rule);
@@ -87,32 +160,48 @@ impl SemanticModelBuilder {
 
                     if has_parent {
                         self.range_to_rule
-                            .insert(completed_rule.range(), completed_rule.clone());
+                            .insert(completed_rule.range(&self.root), completed_rule.clone());
                     } else {
                         self.range_to_rule
-                            .insert(completed_rule.range(), completed_rule.clone());
+                            .insert(completed_rule.range(&self.root), completed_rule.clone());
                         self.rules.push(completed_rule.clone());
                     }
                 }
             }
             SemanticEvent::SelectorDeclaration { node, specificity } => {
-                let parent_specificity = self
-                    .current_rule_stack
-                    .last()
-                    .and_then(|rule_id| self.rules_by_id.get(rule_id))
-                    .and_then(|rule| rule.parent_id)
-                    .and_then(|parent_id| self.rules_by_id.get(&parent_id))
-                    .map(|parent| parent.specificity)
-                    .unwrap_or_default();
-
                 if let Some(current_rule) = self.current_rule_stack.last() {
-                    let current_rule = self.rules_by_id.get_mut(current_rule).unwrap();
-                    current_rule.selectors.push(Selector {
-                        node,
-                        specificity: parent_specificity + specificity,
-                    });
+                    let parent_specificity = if node.has_nesting_selectors() {
+                        let nesting_level = node.nesting_level();
+                        self.get_parent_selector_at(nesting_level)
+                            .map(|rule| {
+                                rule.selectors
+                                    .iter()
+                                    .map(|s| s.specificity)
+                                    .max()
+                                    .unwrap_or_default()
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        self.get_last_parent_selector_rule()
+                            .map(|rule| {
+                                rule.selectors
+                                    .iter()
+                                    .map(|s| s.specificity)
+                                    .max()
+                                    .unwrap_or_default()
+                            })
+                            .unwrap_or_default()
+                    };
 
-                    current_rule.specificity += specificity;
+                    let current_rule = self.rules_by_id.get_mut(current_rule).unwrap();
+                    let combined = parent_specificity + specificity;
+                    current_rule.selectors.push(Selector {
+                        node: AstPtr::new(&node),
+                        specificity: combined,
+                    });
+                    if combined > current_rule.specificity {
+                        current_rule.specificity = combined;
+                    }
                 }
             }
             SemanticEvent::PropertyDeclaration {
@@ -130,15 +219,15 @@ impl SemanticModelBuilder {
                         self.global_custom_variables.insert(
                             property_name,
                             CssGlobalCustomVariable::Root(CssModelDeclaration {
-                                declaration: node.clone(),
-                                property: property.clone(),
+                                declaration: AstPtr::new(&node),
+                                property: AstPtr::new(&property),
                                 value: value.clone(),
                             }),
                         );
                     }
                     current_rule.declarations.push(CssModelDeclaration {
-                        declaration: node,
-                        property,
+                        declaration: AstPtr::new(&node),
+                        property: AstPtr::new(&property),
                         value,
                     });
                 }
@@ -160,7 +249,7 @@ impl SemanticModelBuilder {
                 self.global_custom_variables.insert(
                     property_name,
                     CssGlobalCustomVariable::AtProperty {
-                        property: property.clone(),
+                        property: AstPtr::new(&property),
                         initial_value,
                         syntax,
                         inherits,

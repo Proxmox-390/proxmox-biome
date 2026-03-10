@@ -3,18 +3,13 @@ use biome_analyze::{
     Visitor, VisitorContext, context::RuleContext, declare_lint_rule,
 };
 use biome_console::markup;
-use biome_deserialize_macros::Deserializable;
 use biome_diagnostics::Severity;
 use biome_js_syntax::{
     AnyFunctionLike, JsBreakStatement, JsContinueStatement, JsElseClause, JsLanguage,
     JsLogicalExpression, JsLogicalOperator, JsSyntaxNode,
 };
 use biome_rowan::{AstNode, Language, SyntaxNode, TextRange, WalkEvent};
-use serde::{Deserialize, Serialize};
-use std::num::NonZeroU8;
-
-#[cfg(feature = "schemars")]
-use schemars::JsonSchema;
+use biome_rule_options::no_excessive_cognitive_complexity::NoExcessiveCognitiveComplexityOptions;
 
 const MAX_FUNCTION_DEPTH: usize = 10;
 const MAX_SCORE: u8 = u8::MAX;
@@ -57,7 +52,7 @@ declare_lint_rule! {
     ///
     /// ## Options
     ///
-    /// Allows to specify the maximum allowed complexity.
+    /// Allows specifying the maximum allowed complexity.
     ///
     /// ```json,options
     /// {
@@ -73,7 +68,7 @@ declare_lint_rule! {
         version: "1.0.0",
         name: "noExcessiveCognitiveComplexity",
         language: "js",
-        sources: &[RuleSource::EslintSonarJs("cognitive-complexity").same()],
+        sources: &[RuleSource::EslintSonarJs("cognitive-complexity").same(), RuleSource::Eslint("complexity").inspired()],
         recommended: false,
         severity: Severity::Information,
     }
@@ -83,11 +78,11 @@ impl Rule for NoExcessiveCognitiveComplexity {
     type Query = CognitiveComplexity;
     type State = ();
     type Signals = Option<Self::State>;
-    type Options = ComplexityOptions;
+    type Options = NoExcessiveCognitiveComplexityOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let calculated_score = ctx.query().score.calculated_score;
-        (calculated_score > ctx.options().max_allowed_complexity.get()).then_some(())
+        (calculated_score > ctx.options().max_allowed_complexity().get()).then_some(())
     }
 
     fn diagnostic(ctx: &RuleContext<Self>, _: &Self::State) -> Option<RuleDiagnostic> {
@@ -96,9 +91,7 @@ impl Rule for NoExcessiveCognitiveComplexity {
             score: ComplexityScore { calculated_score },
         } = ctx.query();
 
-        let ComplexityOptions {
-            max_allowed_complexity,
-        } = ctx.options();
+        let max_allowed_complexity = ctx.options().max_allowed_complexity();
 
         let range = function_like
             .name_range()
@@ -278,20 +271,20 @@ impl CognitiveComplexityVisitor {
                     self.stack.push(function_state);
                 }
             }
-        } else if let Some(state) = self.stack.last_mut() {
-            if state.score < MAX_SCORE {
-                if increases_nesting(node) {
-                    state.nesting_level = state.nesting_level.saturating_sub(1);
-                } else if let Some(alternate) =
-                    JsElseClause::cast_ref(node).and_then(|js_else| js_else.alternate().ok())
-                {
-                    state.nesting_level = if alternate.as_js_if_statement().is_some() {
-                        // Prevent double nesting inside else-if.
-                        state.nesting_level.saturating_add(1)
-                    } else {
-                        state.nesting_level.saturating_sub(1)
-                    };
-                }
+        } else if let Some(state) = self.stack.last_mut()
+            && state.score < MAX_SCORE
+        {
+            if increases_nesting(node) {
+                state.nesting_level = state.nesting_level.saturating_sub(1);
+            } else if let Some(alternate) =
+                JsElseClause::cast_ref(node).and_then(|js_else| js_else.alternate().ok())
+            {
+                state.nesting_level = if alternate.as_js_if_statement().is_some() {
+                    // Prevent double nesting inside else-if.
+                    state.nesting_level.saturating_add(1)
+                } else {
+                    state.nesting_level.saturating_sub(1)
+                };
             }
         }
     }
@@ -366,21 +359,4 @@ fn receives_nesting_penalty(node: &JsSyntaxNode) -> bool {
 #[derive(Clone, Default)]
 pub struct ComplexityScore {
     calculated_score: u8,
-}
-
-/// Options for the rule `noExcessiveCognitiveComplexity`.
-#[derive(Clone, Debug, Deserialize, Deserializable, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
-pub struct ComplexityOptions {
-    /// The maximum complexity score that we allow. Anything higher is considered excessive.
-    pub max_allowed_complexity: NonZeroU8,
-}
-
-impl Default for ComplexityOptions {
-    fn default() -> Self {
-        Self {
-            max_allowed_complexity: NonZeroU8::new(15).unwrap(),
-        }
-    }
 }

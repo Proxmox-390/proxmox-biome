@@ -1,6 +1,6 @@
 use crate::{html::auxiliary::attribute::FormatHtmlAttributeOptions, prelude::*};
 use biome_formatter::{AttributePosition, FormatRuleWithOptions, write};
-use biome_html_syntax::{AnyHtmlAttribute, HtmlAttributeList, HtmlTagName};
+use biome_html_syntax::{AnyHtmlAttribute, AnyHtmlTagName, HtmlAttributeList};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct FormatHtmlAttributeList {
@@ -8,7 +8,7 @@ pub(crate) struct FormatHtmlAttributeList {
     pub is_canonical_html_element: bool,
 
     /// The name of the tag this attribute list belongs to.
-    pub tag_name: Option<HtmlTagName>,
+    pub tag_name: Option<AnyHtmlTagName>,
 }
 
 pub(crate) struct FormatHtmlAttributeListOptions {
@@ -16,7 +16,7 @@ pub(crate) struct FormatHtmlAttributeListOptions {
     pub is_canonical_html_element: bool,
 
     /// The name of the tag this attribute list belongs to.
-    pub tag_name: Option<HtmlTagName>,
+    pub tag_name: Option<AnyHtmlTagName>,
 }
 
 impl FormatRuleWithOptions<HtmlAttributeList> for FormatHtmlAttributeList {
@@ -33,7 +33,7 @@ impl FormatRule<HtmlAttributeList> for FormatHtmlAttributeList {
     type Context = HtmlFormatContext;
     fn fmt(&self, node: &HtmlAttributeList, f: &mut HtmlFormatter) -> FormatResult<()> {
         let attribute_count = node.len();
-        let attribute_seperator = if f.options().attribute_position()
+        let attribute_separator = if f.options().attribute_position()
             == AttributePosition::Multiline
             && attribute_count > 1
         {
@@ -48,7 +48,7 @@ impl FormatRule<HtmlAttributeList> for FormatHtmlAttributeList {
                 [
                     space(),
                     &soft_line_indent_or_space(&format_with(|f| {
-                        f.join_with(&attribute_seperator)
+                        f.join_with(&attribute_separator)
                             .entries(node.iter().map(|attribute| {
                                 // Prettier normalizes the casing for attributes, but only for elements that are known to be canonical HTML elements, as in they are defined in any version of the HTML specification.
                                 format_with(move |f| match &attribute {
@@ -58,9 +58,29 @@ impl FormatRule<HtmlAttributeList> for FormatHtmlAttributeList {
                                             is_canonical_html_element: self
                                                 .is_canonical_html_element,
                                             tag_name: self.tag_name.clone(),
+                                            compact: false,
                                         })
                                         .fmt(f),
+                                    AnyHtmlAttribute::HtmlAttributeDoubleTextExpression(attr) => {
+                                        attr.format().fmt(f)
+                                    }
+                                    AnyHtmlAttribute::HtmlAttributeSingleTextExpression(attr) => {
+                                        attr.format().fmt(f)
+                                    }
                                     AnyHtmlAttribute::HtmlBogusAttribute(attr) => {
+                                        attr.format().fmt(f)
+                                    }
+                                    AnyHtmlAttribute::SvelteAttachAttribute(attr) => {
+                                        attr.format().fmt(f)
+                                    }
+                                    AnyHtmlAttribute::AnyVueDirective(attr) => attr.format().fmt(f),
+                                    AnyHtmlAttribute::AnySvelteDirective(attr) => {
+                                        attr.format().fmt(f)
+                                    }
+                                    AnyHtmlAttribute::HtmlSpreadAttribute(attr) => {
+                                        attr.format().fmt(f)
+                                    }
+                                    AnyHtmlAttribute::AnyAstroDirective(attr) => {
                                         attr.format().fmt(f)
                                     }
                                 })

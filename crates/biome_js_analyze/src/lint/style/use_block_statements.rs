@@ -8,11 +8,11 @@ use biome_js_syntax::{
     JsForStatement, JsIfStatement, JsLanguage, JsSyntaxTrivia, JsWhileStatement, JsWithStatement,
     T, TriviaPieceKind,
 };
+use biome_rule_options::use_block_statements::UseBlockStatementsOptions;
 
 use biome_rowan::{AstNode, BatchMutationExt, SyntaxTriviaPiece, declare_node_union};
 
 use crate::JsRuleAction;
-use crate::{use_block_statements_diagnostic, use_block_statements_replace_body};
 
 declare_lint_rule! {
     /// Requires following curly brace conventions.
@@ -59,10 +59,6 @@ declare_lint_rule! {
     /// ```js,expect_diagnostic
     ///    while (x);
     /// ```
-    ///
-    /// ```js,expect_diagnostic
-    ///   with (x);
-    /// ```
     pub UseBlockStatements {
         version: "1.0.0",
         name: "useBlockStatements",
@@ -78,11 +74,52 @@ declare_node_union! {
     pub AnyJsBlockStatement = JsIfStatement | JsElseClause | JsDoWhileStatement | JsForInStatement | JsForOfStatement | JsForStatement | JsWhileStatement | JsWithStatement
 }
 
+// Helper macros used in the implementation below
+macro_rules! use_block_statements_diagnostic {
+    ($id:ident, $field:ident) => {{
+        let body = $id.$field().ok()?;
+        if matches!(body, AnyJsStatement::JsEmptyStatement(_)) {
+            Some(UseBlockStatementsOperationType::ReplaceBody)
+        } else if !matches!(body, AnyJsStatement::JsBlockStatement(_)) {
+            Some(UseBlockStatementsOperationType::Wrap(body))
+        } else {
+            None
+        }
+    }};
+    ($id:ident) => {
+        use_block_statements_diagnostic!($id, body)
+    };
+}
+
+macro_rules! use_block_statements_replace_body {
+    ($stmt_type:ident, $builder_method:ident, $mutation:ident, $node:ident, $stmt:ident) => {
+        $mutation.replace_node(
+            $node.clone(),
+            AnyJsBlockStatement::$stmt_type($stmt.clone().$builder_method(
+                AnyJsStatement::JsBlockStatement(make::js_block_statement(
+                    make::token(T!['{']).with_leading_trivia([(TriviaPieceKind::Whitespace, " ")]),
+                    make::js_statement_list([]),
+                    make::token(T!['}']),
+                )),
+            )),
+        )
+    };
+
+    ($stmt_type:ident, $mutation:ident, $node:ident, $stmt:ident) => {
+        use_block_statements_replace_body!($stmt_type, with_body, $mutation, $node, $stmt)
+    };
+}
+
+pub enum UseBlockStatementsOperationType {
+    Wrap(AnyJsStatement),
+    ReplaceBody,
+}
+
 impl Rule for UseBlockStatements {
     type Query = Ast<AnyJsBlockStatement>;
     type State = UseBlockStatementsOperationType;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = UseBlockStatementsOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Option<Self::State> {
         let node = ctx.query();
@@ -303,46 +340,4 @@ fn collect_to_first_newline(trivia: &JsSyntaxTrivia) -> Vec<SyntaxTriviaPiece<Js
             !had_newline
         })
         .collect()
-}
-
-pub enum UseBlockStatementsOperationType {
-    Wrap(AnyJsStatement),
-    ReplaceBody,
-}
-
-#[macro_export]
-macro_rules! use_block_statements_diagnostic {
-    ($id:ident, $field:ident) => {{
-        let body = $id.$field().ok()?;
-        if matches!(body, AnyJsStatement::JsEmptyStatement(_)) {
-            Some(UseBlockStatementsOperationType::ReplaceBody)
-        } else if !matches!(body, AnyJsStatement::JsBlockStatement(_)) {
-            Some(UseBlockStatementsOperationType::Wrap(body))
-        } else {
-            None
-        }
-    }};
-    ($id:ident) => {
-        use_block_statements_diagnostic!($id, body)
-    };
-}
-
-#[macro_export]
-macro_rules! use_block_statements_replace_body {
-    ($stmt_type:ident, $builder_method:ident, $mutation:ident, $node:ident, $stmt:ident) => {
-        $mutation.replace_node(
-            $node.clone(),
-            AnyJsBlockStatement::$stmt_type($stmt.clone().$builder_method(
-                AnyJsStatement::JsBlockStatement(make::js_block_statement(
-                    make::token(T!['{']).with_leading_trivia([(TriviaPieceKind::Whitespace, " ")]),
-                    make::js_statement_list([]),
-                    make::token(T!['}']),
-                )),
-            )),
-        )
-    };
-
-    ($stmt_type:ident, $mutation:ident, $node:ident, $stmt:ident) => {
-        use_block_statements_replace_body!($stmt_type, with_body, $mutation, $node, $stmt)
-    };
 }

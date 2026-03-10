@@ -2,6 +2,7 @@
 source: crates/biome_js_parser/tests/spec_test.rs
 expression: snapshot
 ---
+
 ## Input
 
 ```ts
@@ -1305,7 +1306,7 @@ decorator.ts:5:2 parse ━━━━━━━━━━━━━━━━━━━
   
 decorator.ts:6:3 parse ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  × Parenthesized expression didnt contain anything
+  × Parenthesized expression didn't contain anything
   
     4 │ @[] in 1 class MyClass {}
     5 │ @[] class MyClass {}

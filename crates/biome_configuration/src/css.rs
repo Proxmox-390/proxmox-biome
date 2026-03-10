@@ -1,6 +1,8 @@
 use crate::bool::Bool;
 use biome_deserialize_macros::{Deserializable, Merge};
-use biome_formatter::{IndentStyle, IndentWidth, LineEnding, LineWidth, QuoteStyle};
+use biome_formatter::{
+    IndentStyle, IndentWidth, LineEnding, LineWidth, QuoteStyle, TrailingNewline,
+};
 use bpaf::Bpaf;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +37,7 @@ pub struct CssConfiguration {
 
 pub type CssAllowWrongLineCommentsEnabled = Bool<false>;
 pub type CssModulesEnabled = Bool<false>;
+pub type CssTailwindDirectivesEnabled = Bool<false>;
 
 /// Options that changes how the CSS parser behaves
 #[derive(
@@ -45,11 +48,18 @@ pub type CssModulesEnabled = Bool<false>;
 pub struct CssParserConfiguration {
     /// Allow comments to appear on incorrect lines in `.css` files
     #[bpaf(hide)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_wrong_line_comments: Option<CssAllowWrongLineCommentsEnabled>,
 
-    /// Enables parsing of CSS Modules specific features.
-    #[bpaf(hide)]
+    /// Enables parsing of CSS Modules specific features. Enable this feature only
+    /// when your files don't end in `.module.css`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[bpaf(long("css-parse-css-modules"), argument("true|false"))]
     pub css_modules: Option<CssModulesEnabled>,
+
+    /// Enables parsing of Tailwind CSS 4.0 directives and functions.
+    #[bpaf(long("css-parse-tailwind-directives"), argument("true|false"))]
+    pub tailwind_directives: Option<CssTailwindDirectivesEnabled>,
 }
 
 pub type CssFormatterEnabled = Bool<true>;
@@ -76,8 +86,8 @@ pub struct CssFormatterConfiguration {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indent_width: Option<IndentWidth>,
 
-    /// The type of line ending applied to CSS (and its super languages) files.
-    #[bpaf(long("css-formatter-line-ending"), argument("lf|crlf|cr"))]
+    /// The type of line ending applied to CSS (and its super languages) files. `auto` uses CRLF on Windows and LF on other platforms.
+    #[bpaf(long("css-formatter-line-ending"), argument("lf|crlf|cr|auto"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line_ending: Option<LineEnding>,
 
@@ -90,6 +100,20 @@ pub struct CssFormatterConfiguration {
     #[bpaf(long("css-formatter-quote-style"), argument("double|single"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quote_style: Option<QuoteStyle>,
+
+    /// Whether to add a trailing newline at the end of the file.
+    ///
+    /// Setting this option to `false` is **highly discouraged** because it could cause many problems with other tools:
+    /// - https://thoughtbot.com/blog/no-newline-at-end-of-file
+    /// - https://callmeryan.medium.com/no-newline-at-end-of-file-navigating-gits-warning-for-android-developers-af14e73dd804
+    /// - https://unix.stackexchange.com/questions/345548/how-to-cat-files-together-adding-missing-newlines-at-end-of-some-files
+    ///
+    /// Disable the option at your own risk.
+    ///
+    /// Defaults to true.
+    #[bpaf(long("css-formatter-trailing-newline"), argument("true|false"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trailing_newline: Option<TrailingNewline>,
 }
 
 impl CssFormatterConfiguration {
@@ -123,7 +147,7 @@ impl CssLinterConfiguration {
     }
 }
 
-pub type CssAssistEnabled = Bool<false>;
+pub type CssAssistEnabled = Bool<true>;
 
 /// Options that changes how the CSS assist behaves
 #[derive(

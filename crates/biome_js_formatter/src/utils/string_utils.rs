@@ -39,7 +39,7 @@ impl<'token> FormatLiteralStringToken<'token> {
         self.token
     }
 
-    pub fn clean_text(&self, options: &JsFormatOptions) -> CleanedStringLiteralText {
+    pub fn clean_text(&self, options: &JsFormatOptions) -> CleanedStringLiteralText<'_> {
         let token = self.token();
         debug_assert!(
             matches!(token.kind(), JS_STRING_LITERAL | JSX_STRING_LITERAL),
@@ -315,7 +315,9 @@ impl<'token> LiteralStringNormaliser<'token> {
         file_source: SourceFileKind,
     ) -> Cow<'token, str> {
         let quoteless = self.raw_content();
+        let is_new_keyword = quoteless == "new";
         let can_remove_quotes = !self.is_preserve_quote_properties()
+            && !is_new_keyword
             && (self.can_remove_number_quotes_by_file_type(file_source) || is_js_ident(quoteless));
         if can_remove_quotes {
             Cow::Owned(quoteless.to_string())
@@ -400,7 +402,7 @@ mod tests {
     }
 
     impl AsToken {
-        fn into_token(self, token: &JsSyntaxToken) -> FormatLiteralStringToken {
+        fn into_token(self, token: &JsSyntaxToken) -> FormatLiteralStringToken<'_> {
             match self {
                 Self::Directive => {
                     FormatLiteralStringToken::new(token, StringLiteralParentKind::Directive)

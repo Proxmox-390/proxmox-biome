@@ -1,13 +1,13 @@
+use crate::rule::RuleDiagnostic;
 use biome_console::{MarkupBuf, markup};
 use biome_diagnostics::{
     Advices, Category, Diagnostic, DiagnosticExt, DiagnosticTags, Error, Location, LogCategory,
     MessageAndDescription, Severity, Visit, advice::CodeSuggestionAdvice, category,
 };
-use biome_rowan::TextRange;
+use biome_rowan::{TextRange, TextSize};
 use std::borrow::Cow;
 use std::fmt::{Debug, Formatter};
-
-use crate::rule::RuleDiagnostic;
+use std::ops::Add;
 
 /// Small wrapper for diagnostics during the analysis phase.
 ///
@@ -21,6 +21,9 @@ pub struct AnalyzerDiagnostic {
     kind: DiagnosticKind,
     /// Series of code suggestions offered by rule code actions
     code_suggestion_list: Vec<CodeSuggestionAdvice<MarkupBuf>>,
+    /// Offset to apply to the diagnostic location and advice ranges
+    /// This is used for embedded snippets (e.g., Vue files) to adjust positions relative to the parent document
+    offset: Option<TextSize>,
 }
 
 impl From<RuleDiagnostic> for AnalyzerDiagnostic {
@@ -28,12 +31,13 @@ impl From<RuleDiagnostic> for AnalyzerDiagnostic {
         Self {
             kind: DiagnosticKind::Rule(Box::new(rule_diagnostic)),
             code_suggestion_list: vec![],
+            offset: None,
         }
     }
 }
 
 #[derive(Debug)]
-enum DiagnosticKind {
+pub enum DiagnosticKind {
     /// It holds various info related to diagnostics emitted by the rules
     Rule(Box<RuleDiagnostic>),
     /// We have raw information to create a basic [Diagnostic]
@@ -78,18 +82,59 @@ impl Diagnostic for AnalyzerDiagnostic {
     }
 
     fn location(&self) -> Location<'_> {
-        match &self.kind {
+        let mut location = match &self.kind {
             DiagnosticKind::Rule(rule_diagnostic) => {
                 Location::builder().span(&rule_diagnostic.span).build()
             }
             DiagnosticKind::Raw(error) => error.location(),
+        };
+
+        // Apply the offset to the location span if one is set
+        if let Some(offset) = self.offset
+            && location.span.is_some()
+        {
+            location.span = location.span.map(|span| span.add(offset));
         }
+
+        location
     }
 
     fn advices(&self, visitor: &mut dyn Visit) -> std::io::Result<()> {
         match &self.kind {
-            DiagnosticKind::Rule(rule_diagnostic) => rule_diagnostic.advices().record(visitor)?,
-            DiagnosticKind::Raw(error) => error.advices(visitor)?,
+            DiagnosticKind::Rule(rule_diagnostic) => rule_diagnostic.record(visitor)?,
+            DiagnosticKind::Raw(error) => {
+                // If we have an offset, wrap the visitor to apply it to frame locations
+                if let Some(offset) = self.offset {
+                    struct OffsetVisitor<'a> {
+                        inner: &'a mut dyn Visit,
+                        offset: TextSize,
+                    }
+
+                    impl<'a> Visit for OffsetVisitor<'a> {
+                        fn record_frame(&mut self, location: Location<'_>) -> std::io::Result<()> {
+                            if let Some(span) = location.span {
+                                let new_span = span.add(self.offset);
+                                let offset_location = Location::builder()
+                                    .span(&new_span)
+                                    .resource(&location.resource)
+                                    .source_code(&location.source_code)
+                                    .build();
+                                self.inner.record_frame(offset_location)
+                            } else {
+                                self.inner.record_frame(location)
+                            }
+                        }
+                    }
+
+                    let mut offset_visitor = OffsetVisitor {
+                        inner: visitor,
+                        offset,
+                    };
+                    error.advices(&mut offset_visitor)?;
+                } else {
+                    error.advices(visitor)?;
+                }
+            }
         }
 
         // finally, we print possible code suggestions on how to fix the issue
@@ -107,6 +152,7 @@ impl AnalyzerDiagnostic {
         Self {
             kind: DiagnosticKind::Raw(error),
             code_suggestion_list: vec![],
+            offset: None,
         }
     }
 
@@ -132,6 +178,20 @@ impl AnalyzerDiagnostic {
 
         self.code_suggestion_list.push(suggestion);
         self
+    }
+
+    /// The location of the diagnostic is shifted using this offset.
+    /// This is applied to both [DiagnosticKind::Rule] and [DiagnosticKind::Raw] diagnostics.
+    pub fn add_diagnostic_offset(&mut self, offset: TextSize) {
+        match &mut self.kind {
+            DiagnosticKind::Rule(rule_diagnostic) => {
+                let diagnostic = rule_diagnostic.as_mut();
+                diagnostic.set_advice_offset(offset);
+            }
+            DiagnosticKind::Raw(_) => {}
+        }
+        // Store the offset to be applied in location()
+        self.offset = Some(offset);
     }
 
     pub const fn is_raw(&self) -> bool {
@@ -240,9 +300,43 @@ pub enum RuleError {
     ReplacedRootWithNonRootError {
         rule_name: Option<(Cow<'static, str>, Cow<'static, str>)>,
     },
+    /// The rules listed below caused an infinite loop when applying fixes to the file.
+    ConflictingRuleFixesError {
+        rules: Vec<(Cow<'static, str>, Cow<'static, str>)>,
+    },
 }
 
-impl Diagnostic for RuleError {}
+impl Diagnostic for RuleError {
+    fn category(&self) -> Option<&'static Category> {
+        Some(category!("internalError/panic"))
+    }
+
+    fn severity(&self) -> Severity {
+        Severity::Error
+    }
+
+    fn description(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            fmt,
+            "An internal error occurred when analyzing this file.\n\n{}\n\nThis is likely a bug in Biome, not an error in your code. Please consider filing an issue on GitHub with a reproduction of this error.",
+            self
+        )?;
+        Ok(())
+    }
+
+    fn message(&self, fmt: &mut biome_console::fmt::Formatter<'_>) -> std::io::Result<()> {
+        fmt.write_markup(markup! {
+            "An internal error occurred when analyzing this file."
+        })?;
+        fmt.write_markup(markup! {
+            {self}
+        })?;
+        fmt.write_markup(markup! {
+            "This is likely a bug in Biome, not an error in your code. Please consider filing an issue on "<Hyperlink href="https://github.com/biomejs/biome/issues/new/choose">"GitHub"</Hyperlink>" with a reproduction of this error."
+        })?;
+        Ok(())
+    }
+}
 
 impl std::fmt::Display for RuleError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -252,13 +346,27 @@ impl std::fmt::Display for RuleError {
             } => {
                 std::write!(
                     fmt,
-                    "the rule '{group}/{rule}' replaced the root of the file with a non-root node."
+                    "The rule '{group}/{rule}' replaced the root of the file with a non-root node."
                 )
             }
             Self::ReplacedRootWithNonRootError { rule_name: None } => {
                 std::write!(
                     fmt,
-                    "a code action replaced the root of the file with a non-root node."
+                    "A code action replaced the root of the file with a non-root node."
+                )
+            }
+            Self::ConflictingRuleFixesError { rules } => {
+                if rules.is_empty() {
+                    return std::write!(fmt, "conflicting rule fixes detected");
+                }
+                let rules_list = rules
+                    .iter()
+                    .map(|(group, rule)| format!("'{group}/{rule}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                std::write!(
+                    fmt,
+                    "The rules {rules_list} caused an infinite loop when applying fixes to the file."
                 )
             }
         }
@@ -273,13 +381,27 @@ impl biome_console::fmt::Display for RuleError {
             } => {
                 std::write!(
                     fmt,
-                    "the rule '{group}/{rule}' replaced the root of the file with a non-root node."
+                    "The rule '{group}/{rule}' replaced the root of the file with a non-root node."
                 )
             }
             Self::ReplacedRootWithNonRootError { rule_name: None } => {
                 std::write!(
                     fmt,
-                    "a code action replaced the root of the file with a non-root node."
+                    "A code action replaced the root of the file with a non-root node."
+                )
+            }
+            Self::ConflictingRuleFixesError { rules } => {
+                if rules.is_empty() {
+                    return std::write!(fmt, "Conflicting rule fixes detected.");
+                }
+                let rules_list = rules
+                    .iter()
+                    .map(|(group, rule)| format!("'{group}/{rule}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                std::write!(
+                    fmt,
+                    "The rules {rules_list} caused an infinite loop when applying fixes to the file."
                 )
             }
         }

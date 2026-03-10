@@ -662,6 +662,7 @@ fn parse_class_member_impl(
         && !p.nth_at(1, T![?])
         && !p.nth_at(1, T![;])
         && !p.nth_at(1, T![=])
+        && !p.nth_at(1, T![:])
         && !is_at_method_class_member(p, 1)
         && !p.has_nth_preceding_line_break(1)
     {
@@ -984,7 +985,7 @@ fn parse_static_initialization_block_class_member(
 }
 
 /// Parses the body of a property class member (anything after the member name). If the current member is abstract, the [ParsedSyntax]
-/// will have kind TS_PROPERTY_SIGNATURE_CLASS_MEMBER, otehrwise will be JS_PROPERTY_CLASS_MEMBER.
+/// will have kind TS_PROPERTY_SIGNATURE_CLASS_MEMBER, otherwise will be JS_PROPERTY_CLASS_MEMBER.
 ///
 ///  # Arguments
 ///
@@ -2797,17 +2798,16 @@ fn parse_decorator(p: &mut JsParser) -> ParsedSyntax {
     if let Some(mut complete_marker) =
         parse_lhs_expr(p, ExpressionContext::default().and_in_decorator(true))
             .or_add_diagnostic(p, expected_expression)
-    {
-        if !matches!(
+        && !matches!(
             complete_marker.kind(p),
             JS_PARENTHESIZED_EXPRESSION
                 | JS_CALL_EXPRESSION
                 | JS_STATIC_MEMBER_EXPRESSION
                 | JS_IDENTIFIER_EXPRESSION
-        ) {
-            p.error(invalid_decorator_error(p, complete_marker.range(p)));
-            complete_marker.change_to_bogus(p);
-        }
+        )
+    {
+        p.error(invalid_decorator_error(p, complete_marker.range(p)));
+        complete_marker.change_to_bogus(p);
     }
 
     Present(m.complete(p, JS_DECORATOR))

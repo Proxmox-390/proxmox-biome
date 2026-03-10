@@ -12,7 +12,9 @@ use crate::{
     Configuration, FormatterConfiguration, OverrideFormatterConfiguration, OverrideGlobs,
     OverridePattern, Overrides, diagnostics::EditorConfigDiagnostic,
 };
-use biome_formatter::{IndentStyle, IndentWidth, LineEnding, ParseFormatNumberError};
+use biome_formatter::{
+    IndentStyle, IndentWidth, LineEnding, ParseFormatNumberError, TrailingNewline,
+};
 use biome_rowan::TextRange;
 use std::fmt::{Debug, Display};
 use std::num::ParseIntError;
@@ -178,14 +180,14 @@ pub enum EditorConfigErrorKind {
 }
 impl biome_console::fmt::Display for EditorConfigErrorKind {
     fn fmt(&self, fmt: &mut biome_console::fmt::Formatter<'_>) -> std::io::Result<()> {
-        write!(fmt, "{}", self)
+        write!(fmt, "{self}",)
     }
 }
 impl std::fmt::Display for EditorConfigErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ParseFormatNumberError(error) => {
-                write!(f, "{}", error)
+                write!(f, "{error}",)
             }
             Self::MissingSectionEnd => f.write_str("A section must be closed with `]`."),
             Self::InvalidBooleanValue => {
@@ -198,7 +200,7 @@ impl std::fmt::Display for EditorConfigErrorKind {
                 f.write_str("Invalid `ident_style` value: `space` or `tab` is expected.")
             }
             Self::InvalidIndentSizeValue(error) => {
-                write!(f, "{}", error)
+                write!(f, "{error}",)
             }
         }
     }
@@ -232,13 +234,13 @@ impl FromStr for EditorConfig {
                     // Ignore comments
                 }
                 Some(b'[') => {
-                    if let Some((section_name, options)) = last_section.take() {
-                        if !options.is_all_none() {
-                            sections.push(EditorConfigSection {
-                                glob: section_name.to_string(),
-                                options,
-                            });
-                        }
+                    if let Some((section_name, options)) = last_section.take()
+                        && !options.is_all_none()
+                    {
+                        sections.push(EditorConfigSection {
+                            glob: section_name.to_string(),
+                            options,
+                        });
                     }
                     if let Some(section_name) = line[1..].trim_ascii().strip_suffix(']') {
                         last_section = Some((section_name, EditorConfigOptions::default()))
@@ -300,13 +302,13 @@ impl FromStr for EditorConfig {
             // `+ 1` for the newline `\n`
             offset += line.len() as u32 + 1;
         }
-        if let Some((section_name, options)) = last_section.take() {
-            if !options.is_all_none() {
-                sections.push(EditorConfigSection {
-                    glob: section_name.to_string(),
-                    options,
-                });
-            }
+        if let Some((section_name, options)) = last_section.take()
+            && !options.is_all_none()
+        {
+            sections.push(EditorConfigSection {
+                glob: section_name.to_string(),
+                options,
+            });
         }
         Ok(Self { root, sections })
     }
@@ -359,7 +361,7 @@ pub struct EditorConfigOptions {
     pub indent_size: EditorconfigValue<IndentSize>,
     pub end_of_line: EditorconfigValue<LineEnding>,
     // Not a biome option, but we need it to emit a diagnostic when this is set to false.
-    pub insert_final_newline: EditorconfigValue<bool>,
+    pub insert_final_newline: EditorconfigValue<TrailingNewline>,
 }
 
 impl EditorConfigOptions {
@@ -378,6 +380,7 @@ impl EditorConfigOptions {
             indent_style: self.indent_style.into(),
             indent_width,
             line_ending: self.end_of_line.into(),
+            trailing_newline: self.insert_final_newline.into(),
             ..Default::default()
         }
     }
@@ -390,20 +393,13 @@ impl EditorConfigOptions {
             indent_style: self.indent_style.into(),
             indent_width,
             line_ending: self.end_of_line.into(),
+            trailing_newline: self.insert_final_newline.into(),
             ..Default::default()
         }
     }
 
     fn validate(&self) -> Vec<EditorConfigDiagnostic> {
-        let mut diagnostics = vec![];
-        // `insert_final_newline = false` results in formatting behavior that is incompatible with biome
-        if let EditorconfigValue::Explicit(false) = self.insert_final_newline {
-            diagnostics.push(EditorConfigDiagnostic::incompatible(
-                "insert_final_newline",
-                "Biome always inserts a final newline. Set this option to true.",
-            ));
-        }
-        diagnostics
+        vec![]
     }
 }
 

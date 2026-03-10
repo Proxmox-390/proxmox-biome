@@ -4,6 +4,7 @@ use biome_analyze::{Ast, Rule, RuleDiagnostic, RuleSource, declare_lint_rule};
 use biome_diagnostics::Severity;
 use biome_js_syntax::{AnyJsExpression, AnyJsSwitchClause, JsSwitchStatement};
 use biome_rowan::{AstNode, TextRange};
+use biome_rule_options::no_duplicate_case::NoDuplicateCaseOptions;
 
 declare_lint_rule! {
     /// Disallow duplicate case labels.
@@ -95,23 +96,23 @@ impl Rule for NoDuplicateCase {
     type Query = Ast<JsSwitchStatement>;
     type State = (TextRange, TextRange);
     type Signals = Box<[Self::State]>;
-    type Options = ();
+    type Options = NoDuplicateCaseOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
         let mut defined_tests: Vec<AnyJsExpression> = Vec::new();
         let mut signals = Vec::new();
         for case in node.cases() {
-            if let AnyJsSwitchClause::JsCaseClause(case) = case {
-                if let Ok(test) = case.test() {
-                    let define_test = defined_tests
-                        .iter()
-                        .find(|define_test| is_node_equal(define_test.syntax(), test.syntax()));
-                    if let Some(define_test) = define_test {
-                        signals.push((define_test.range(), test.range()));
-                    } else {
-                        defined_tests.push(test);
-                    }
+            if let AnyJsSwitchClause::JsCaseClause(case) = case
+                && let Ok(test) = case.test()
+            {
+                let define_test = defined_tests
+                    .iter()
+                    .find(|define_test| is_node_equal(define_test.syntax(), test.syntax()));
+                if let Some(define_test) = define_test {
+                    signals.push((define_test.range(), test.range()));
+                } else {
+                    defined_tests.push(test);
                 }
             }
         }

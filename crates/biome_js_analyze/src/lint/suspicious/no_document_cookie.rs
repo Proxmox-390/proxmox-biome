@@ -7,6 +7,7 @@ use biome_js_syntax::{
     binding_ext::AnyJsBindingDeclaration, global_identifier, static_value::StaticValue,
 };
 use biome_rowan::AstNode;
+use biome_rule_options::no_document_cookie::NoDocumentCookieOptions;
 
 use crate::services::semantic::Semantic;
 
@@ -82,7 +83,7 @@ fn is_global_document(expr: &AnyJsExpression, model: &SemanticModel) -> Option<(
         let decl = bind.tree().declaration()?;
         let decl = decl.parent_binding_pattern_declaration().unwrap_or(decl);
         match decl {
-            // const foo = documnet;
+            // const foo = document;
             AnyJsBindingDeclaration::JsVariableDeclarator(declarator) => {
                 let initializer = declarator.initializer()?;
                 let right_expr = initializer.expression().ok()?;
@@ -129,7 +130,7 @@ impl Rule for NoDocumentCookie {
     type Query = Semantic<JsAssignmentExpression>;
     type State = ();
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoDocumentCookieOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();

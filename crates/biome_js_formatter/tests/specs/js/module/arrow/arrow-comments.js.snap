@@ -2,6 +2,7 @@
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: js/module/arrow/arrow-comments.js
 ---
+
 # Input
 
 ```js
@@ -51,6 +52,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -74,6 +77,7 @@ Expand lists: Auto
 (action) => /* comment */ `
 ${test}
 multiline`;
+
 ```
 
 ## Output 1
@@ -93,6 +97,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -116,4 +122,5 @@ action =>
 action => /* comment */ `
 ${test}
 multiline`;
+
 ```

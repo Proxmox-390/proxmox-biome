@@ -1,6 +1,7 @@
 use biome_css_formatter::format_node;
 use biome_css_formatter::{CssFormatLanguage, context::CssFormatOptions};
 use biome_css_parser::{CssParserOptions, parse_css};
+use biome_css_syntax::CssFileSource;
 use biome_formatter::{IndentStyle, LineWidth, QuoteStyle};
 use biome_formatter_test::check_reformat::CheckReformat;
 
@@ -8,18 +9,18 @@ mod language {
     include!("language.rs");
 }
 
-// #[ignore]
+#[ignore]
 #[test]
 // use this test check if your snippet prints as you wish, without using a snapshot
 fn quick_test() {
-    let src = r#".font-heading {
-  font-feature-settings:
-      var(--heading-salt), var(--heading-ss06), var(--heading-ss11), var(--heading-cv09),
-      var(--heading-liga), var(--heading-calt);
+    let src = r#"
+.test{
+  colors: fn((primary: red));
+
 }
 
 "#;
-    let parse = parse_css(src, CssParserOptions::default());
+    let parse = parse_css(src, CssFileSource::scss(), CssParserOptions::default());
     println!("{parse:#?}");
 
     let options = CssFormatOptions::default()
@@ -30,7 +31,7 @@ fn quick_test() {
     let result = doc.print().unwrap();
 
     let root = &parse.syntax();
-    let language = language::CssTestFormatLanguage::default();
+    let language = language::CssTestFormatLanguage::new(CssFileSource::scss());
 
     println!("{}", doc.into_document());
     eprintln!("{}", result.as_code());

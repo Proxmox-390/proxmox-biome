@@ -1,7 +1,7 @@
 use crate::lexer::CssReLexContext;
 use crate::state::CssParserState;
 use crate::token_source::{CssTokenSource, CssTokenSourceCheckpoint};
-use biome_css_syntax::CssSyntaxKind;
+use biome_css_syntax::{CssFileSource, CssSyntaxKind};
 use biome_parser::ParserContext;
 use biome_parser::diagnostic::merge_diagnostics;
 use biome_parser::event::Event;
@@ -11,6 +11,7 @@ use biome_parser::{ParserContextCheckpoint, prelude::*};
 pub(crate) struct CssParser<'source> {
     context: ParserContext<CssSyntaxKind>,
     source: CssTokenSource<'source>,
+    pub(crate) source_type: CssFileSource,
     state: CssParserState,
     options: CssParserOptions,
 }
@@ -28,11 +29,25 @@ pub struct CssParserOptions {
 
     /// Enables parsing of CSS Modules specific features.
     /// Defaults to `false`.
-    pub css_modules: bool,
+    pub css_modules: CssModulesKind,
 
     /// Enables parsing of Grit metavariables.
     /// Defaults to `false`.
     pub grit_metavariables: bool,
+
+    /// Enables parsing of Tailwind CSS 4.0 directives and functions.
+    /// Defaults to `false`.
+    pub tailwind_directives: bool,
+}
+
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CssModulesKind {
+    #[default]
+    None,
+    /// The classic CSS modules, which enable things like `:local` and `:global`
+    Classic,
+    /// Enhanced version of CSS modules, which supports `:deep` and `:slotted` too.
+    Vue,
 }
 
 impl CssParserOptions {
@@ -44,7 +59,7 @@ impl CssParserOptions {
 
     /// Enables parsing of css modules selectors.
     pub fn allow_css_modules(mut self) -> Self {
-        self.css_modules = true;
+        self.css_modules = CssModulesKind::Classic;
         self
     }
 
@@ -54,22 +69,49 @@ impl CssParserOptions {
         self
     }
 
+    /// Enables parsing of Tailwind CSS 4.0 directives and functions.
+    pub fn allow_tailwind_directives(mut self) -> Self {
+        self.tailwind_directives = true;
+        self
+    }
+
     /// Checks if parsing of CSS Modules features is disabled.
     pub fn is_css_modules_disabled(&self) -> bool {
-        !self.css_modules
+        !self.is_css_modules_enabled()
     }
 
     /// Checks if parsing of Grit metavariables is enabled.
     pub fn is_metavariable_enabled(&self) -> bool {
         self.grit_metavariables
     }
+
+    /// Checks if parsing of Tailwind CSS 4.0 directives is enabled.
+    pub fn is_tailwind_directives_enabled(&self) -> bool {
+        self.tailwind_directives
+    }
+
+    pub fn is_css_modules_enabled(&self) -> bool {
+        matches!(
+            self.css_modules,
+            CssModulesKind::Classic | CssModulesKind::Vue
+        )
+    }
+
+    pub fn is_css_modules_vue_enabled(&self) -> bool {
+        matches!(self.css_modules, CssModulesKind::Vue)
+    }
 }
 
 impl<'source> CssParser<'source> {
-    pub fn new(source: &'source str, options: CssParserOptions) -> Self {
+    pub fn new(
+        source: &'source str,
+        source_type: CssFileSource,
+        options: CssParserOptions,
+    ) -> Self {
         Self {
             context: ParserContext::default(),
-            source: CssTokenSource::from_str(source, options),
+            source: CssTokenSource::from_str(source, options, source_type),
+            source_type,
             state: CssParserState::new(),
             options,
         }
@@ -154,4 +196,18 @@ pub struct CssParserCheckpoint {
     // `state` is not checkpointed because it (currently) only contains
     // scoped properties that aren't only dependent on checkpoints and
     // should be reset manually when the scope of their use is exited.
+}
+
+impl From<&CssFileSource> for CssParserOptions {
+    fn from(file_source: &CssFileSource) -> Self {
+        let mut options = Self::default();
+        if file_source.is_css_modules() {
+            options.css_modules = CssModulesKind::Classic;
+        }
+        if file_source.is_tailwind_css() {
+            options.tailwind_directives = true;
+        }
+
+        options
+    }
 }

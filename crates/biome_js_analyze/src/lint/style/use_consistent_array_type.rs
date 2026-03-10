@@ -3,7 +3,6 @@ use biome_analyze::{
     Ast, FixKind, Rule, RuleDiagnostic, RuleSource, context::RuleContext, declare_lint_rule,
 };
 use biome_console::{Markup, MarkupBuf, markup};
-use biome_deserialize_macros::Deserializable;
 use biome_diagnostics::Severity;
 use biome_js_factory::make;
 use biome_js_syntax::{
@@ -11,10 +10,9 @@ use biome_js_syntax::{
     TsTypeArguments,
 };
 use biome_rowan::{AstNode, AstSeparatedList, BatchMutationExt, SyntaxNodeOptionExt, TriviaPiece};
-#[cfg(feature = "schemars")]
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+use biome_rule_options::use_consistent_array_type::{
+    ConsistentArrayType, UseConsistentArrayTypeOptions,
+};
 
 declare_lint_rule! {
     /// Require consistently using either `T[]` or `Array<T>`
@@ -95,7 +93,7 @@ impl Rule for UseConsistentArrayType {
     type Query = Ast<AnyTsType>;
     type State = AnyTsType;
     type Signals = Option<Self::State>;
-    type Options = ConsistentArrayTypeOptions;
+    type Options = UseConsistentArrayTypeOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Option<Self::State> {
         let query = ctx.query();
@@ -105,14 +103,14 @@ impl Rule for UseConsistentArrayType {
             AnyTsType::TsTypeOperatorType(_) | AnyTsType::TsArrayType(_)
                 if query.syntax().parent().kind() != Some(JsSyntaxKind::TS_TYPE_OPERATOR_TYPE) =>
             {
-                if options.syntax == ConsistentArrayType::Shorthand {
+                if options.syntax.unwrap_or_default() == ConsistentArrayType::Shorthand {
                     return None;
                 }
                 let array_kind = get_array_kind_by_any_type(query)?;
                 transform_array_type(query.to_owned(), array_kind)
             }
             AnyTsType::TsReferenceType(ty) => {
-                if options.syntax == ConsistentArrayType::Generic {
+                if options.syntax.unwrap_or_default() == ConsistentArrayType::Generic {
                     return None;
                 }
 
@@ -140,7 +138,7 @@ impl Rule for UseConsistentArrayType {
             AnyTsType::TsTypeOperatorType(_) | AnyTsType::TsArrayType(_)
                 if query.syntax().parent().kind() != Some(JsSyntaxKind::TS_TYPE_OPERATOR_TYPE) =>
             {
-                if options.syntax == ConsistentArrayType::Shorthand {
+                if options.syntax.unwrap_or_default() == ConsistentArrayType::Shorthand {
                     return None;
                 }
 
@@ -154,7 +152,7 @@ impl Rule for UseConsistentArrayType {
                 Some(RuleDiagnostic::new(rule_category!(), query.range(), title))
             }
             AnyTsType::TsReferenceType(ty) => {
-                if options.syntax == ConsistentArrayType::Generic {
+                if options.syntax.unwrap_or_default() == ConsistentArrayType::Generic {
                     return None;
                 }
 
@@ -345,24 +343,23 @@ fn transform_array_element_type(param: AnyTsType, array_kind: TsArrayKind) -> Op
             );
 
             // Modify `ReadonlyArray<ReadonlyArray<T>>` to `readonly (readonly T[])[]`
-            if let AnyTsType::TsTypeOperatorType(op) = &element_type {
-                if let Ok(op) = op.operator_token() {
-                    if op.text_trimmed() == "readonly" {
-                        return AnyTsType::TsTypeOperatorType(make::ts_type_operator_type(
-                            readonly_token,
-                            // wrap ArrayType
-                            AnyTsType::TsArrayType(make::ts_array_type(
-                                AnyTsType::TsParenthesizedType(make::ts_parenthesized_type(
-                                    make::token(T!['(']),
-                                    element_type,
-                                    make::token(T![')']),
-                                )),
-                                make::token(T!['[']),
-                                make::token(T![']']),
-                            )),
-                        ));
-                    }
-                }
+            if let AnyTsType::TsTypeOperatorType(op) = &element_type
+                && let Ok(op) = op.operator_token()
+                && op.text_trimmed() == "readonly"
+            {
+                return AnyTsType::TsTypeOperatorType(make::ts_type_operator_type(
+                    readonly_token,
+                    // wrap ArrayType
+                    AnyTsType::TsArrayType(make::ts_array_type(
+                        AnyTsType::TsParenthesizedType(make::ts_parenthesized_type(
+                            make::token(T!['(']),
+                            element_type,
+                            make::token(T![')']),
+                        )),
+                        make::token(T!['[']),
+                        make::token(T![']']),
+                    )),
+                ));
             }
 
             AnyTsType::TsTypeOperatorType(make::ts_type_operator_type(
@@ -476,34 +473,4 @@ where
         ))
         .build(),
     )
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Deserializable, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
-pub struct ConsistentArrayTypeOptions {
-    pub syntax: ConsistentArrayType,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Deserializable, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-#[serde(rename_all = "camelCase")]
-pub enum ConsistentArrayType {
-    /// `ItemType[]`
-    #[default]
-    Shorthand,
-    /// `Array<ItemType>`
-    Generic,
-}
-
-impl FromStr for ConsistentArrayType {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "shorthand" => Ok(Self::Shorthand),
-            "generic" => Ok(Self::Generic),
-            _ => Err("Value not supported for array type syntax"),
-        }
-    }
 }

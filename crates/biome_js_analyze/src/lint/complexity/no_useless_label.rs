@@ -6,6 +6,7 @@ use biome_js_syntax::{AnyJsStatement, JsLabeledStatement, JsSyntaxKind};
 
 use crate::JsRuleAction;
 use biome_rowan::{AstNode, BatchMutationExt};
+use biome_rule_options::no_useless_label::NoUselessLabelOptions;
 
 declare_lint_rule! {
     /// Disallow unnecessary labels.
@@ -47,7 +48,7 @@ impl Rule for NoUselessLabel {
     type Query = Ast<AnyJsStatement>;
     type State = ();
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoUselessLabelOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Option<Self::State> {
         let stmt = ctx.query();
@@ -57,18 +58,18 @@ impl Rule for NoUselessLabel {
             _ => None,
         }?;
         let label = label_token.text_trimmed();
-        for parent in stmt.syntax().ancestors() {
+        for parent in stmt.syntax().ancestors().skip(1) {
             if is_breakable_statement_kind(parent.kind()) {
-                if let Some(labeled_stmt) = JsLabeledStatement::cast(parent.parent()?) {
-                    if labeled_stmt.label_token().ok()?.text_trimmed() == label {
-                        return Some(());
-                    }
+                if let Some(labeled_stmt) = JsLabeledStatement::cast(parent.parent()?)
+                    && labeled_stmt.label_token().ok()?.text_trimmed() == label
+                {
+                    return Some(());
                 }
                 break;
-            } else if let Some(labeled_stmt) = JsLabeledStatement::cast(parent) {
-                if labeled_stmt.label_token().ok()?.text_trimmed() == label {
-                    break;
-                }
+            } else if let Some(labeled_stmt) = JsLabeledStatement::cast(parent)
+                && labeled_stmt.label_token().ok()?.text_trimmed() == label
+            {
+                break;
             }
         }
         None

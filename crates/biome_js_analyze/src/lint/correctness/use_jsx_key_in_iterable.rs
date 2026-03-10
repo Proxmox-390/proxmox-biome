@@ -3,23 +3,24 @@ use crate::services::semantic::Semantic;
 use biome_analyze::RuleSource;
 use biome_analyze::{Rule, RuleDiagnostic, RuleDomain, context::RuleContext, declare_lint_rule};
 use biome_console::markup;
-use biome_deserialize_macros::Deserializable;
 use biome_diagnostics::Severity;
 use biome_js_semantic::SemanticModel;
 use biome_js_syntax::{
     AnyJsExpression, AnyJsFunctionBody, AnyJsMemberExpression, AnyJsObjectMember, AnyJsStatement,
-    AnyJsSwitchClause, AnyJsxAttribute, AnyJsxChild, JsArrayExpression, JsCallExpression,
-    JsFunctionBody, JsObjectExpression, JsStatementList, JsxAttributeList, JsxExpressionChild,
-    JsxTagExpression,
+    AnyJsSwitchClause, AnyJsxAttribute, AnyJsxChild, JsArrayElementList, JsArrayExpression,
+    JsCallArgumentList, JsCallArguments, JsCallExpression, JsFunctionBody, JsNewExpression,
+    JsObjectExpression, JsStatementList, JsxAttributeList, JsxExpressionChild, JsxTagExpression,
 };
 use biome_rowan::{AstNode, AstNodeList, AstSeparatedList, TextRange, declare_node_union};
-use serde::{Deserialize, Serialize};
+use biome_rule_options::use_jsx_key_in_iterable::UseJsxKeyInIterableOptions;
 
 declare_lint_rule! {
     /// Disallow missing key props in iterators/collection literals.
     ///
     /// Warn if an element that likely requires a key prop--namely, one present in an array literal or an arrow function expression.
     /// Check out React documentation for [explanation on the why does React need keys.](https://react.dev/learn/rendering-lists#why-does-react-need-keys)
+    ///
+    /// This rule is intended for use in both React and Qwik applications to prevent missing key props in JSX elements inside iterators.
     ///
     /// ## Examples
     ///
@@ -29,14 +30,14 @@ declare_lint_rule! {
     /// [<Hello />];
     /// ```
     /// ```jsx,expect_diagnostic
-    /// data.map((x) => <Hello>{x}</Hello>);
+    /// {items.map(item => <li>{item}</li>)}
     /// ```
     ///
     /// ### Valid
     ///
     /// ```jsx
     /// [<Hello key="first" />, <Hello key="second" />, <Hello key="third" />];
-    /// data.map((x) => <Hello key={x.id}>{x}</Hello>);
+    /// {items.map(item => <li key={item.id}>{item}</li>)}
     /// ```
     ///
     /// ## Options
@@ -61,10 +62,10 @@ declare_lint_rule! {
         version: "1.6.0",
         name: "useJsxKeyInIterable",
         language: "jsx",
-        sources: &[RuleSource::EslintReact("jsx-key").same()],
+        sources: &[RuleSource::EslintReact("jsx-key").same(), RuleSource::EslintQwik("jsx-key").same()],
         recommended: true,
         severity: Severity::Error,
-        domains: &[RuleDomain::React],
+        domains: &[RuleDomain::React, RuleDomain::Qwik],
     }
 }
 
@@ -74,14 +75,6 @@ declare_node_union! {
 
 declare_node_union! {
     pub ReactComponentExpression = JsxTagExpression | JsCallExpression
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, Deserializable, Eq, PartialEq)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
-pub struct UseJsxKeyInIterableOptions {
-    /// Set to `true` to check shorthand fragments (`<></>`)
-    check_shorthand_fragments: bool,
 }
 
 impl Rule for UseJsxKeyInIterable {
@@ -134,6 +127,10 @@ fn handle_collections(
     model: &SemanticModel,
     options: &UseJsxKeyInIterableOptions,
 ) -> Vec<TextRange> {
+    if should_ignore_check(node) {
+        return Vec::new();
+    }
+
     let is_inside_jsx = node.parent::<JsxExpressionChild>().is_some();
     node.elements()
         .iter()
@@ -218,6 +215,18 @@ fn handle_iterators(
         }
         _ => None,
     }
+}
+
+fn should_ignore_check(node: &JsArrayExpression) -> bool {
+    // Map constructors don't need key in arrays e.g new Map([["Partial", <div></div>]])
+    node.parent::<JsArrayElementList>()
+        .and_then(|n| n.parent::<JsArrayExpression>())
+        .and_then(|n| n.parent::<JsCallArgumentList>())
+        .and_then(|n| n.parent::<JsCallArguments>())
+        .and_then(|n| n.parent::<JsNewExpression>())
+        .and_then(|n| n.callee().ok())
+        .and_then(|c| c.get_callee_member_name())
+        .is_some_and(|t| t.token_text_trimmed() == "Map")
 }
 
 /// Inspects each statement for variable declarations and return statements to find potential React components.
@@ -434,7 +443,7 @@ fn handle_jsx_child(
                 }
             }
             AnyJsxChild::JsxFragment(node) => {
-                if options.check_shorthand_fragments {
+                if options.check_shorthand_fragments() {
                     ranges.push(node.range())
                 }
             }

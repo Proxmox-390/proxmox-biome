@@ -6,21 +6,28 @@ mod cst;
 mod generated;
 mod graphql;
 mod prelude;
+mod trivia;
 mod utils;
+mod verbatim;
 
 use crate::comments::GraphqlCommentStyle;
 pub(crate) use crate::context::GraphqlFormatContext;
 use crate::context::GraphqlFormatOptions;
 use crate::cst::FormatGraphqlSyntaxNode;
+use crate::prelude::{format_bogus_node, format_suppressed_node};
+pub(crate) use crate::trivia::*;
 use biome_formatter::comments::Comments;
 use biome_formatter::prelude::*;
+use biome_formatter::trivia::{FormatToken, format_skipped_token_trivia};
 use biome_formatter::{
     CstFormatContext, FormatContext, FormatLanguage, FormatOwnedWithRule, FormatRefWithRule,
-    FormatToken, TransformSourceMap, write,
+    TransformSourceMap, write,
 };
 use biome_formatter::{Formatted, Printed};
-use biome_graphql_syntax::{GraphqlLanguage, GraphqlSyntaxNode, GraphqlSyntaxToken};
-use biome_rowan::{AstNode, SyntaxNode, TextRange};
+use biome_graphql_syntax::{
+    GraphqlLanguage, GraphqlSyntaxNode, GraphqlSyntaxNodeWithOffset, GraphqlSyntaxToken,
+};
+use biome_rowan::{AstNode, SyntaxNode, SyntaxToken, TextRange};
 
 /// Used to get an object that knows how to format this object.
 pub(crate) trait AsFormat<Context> {
@@ -177,7 +184,7 @@ where
     N: AstNode<Language = GraphqlLanguage>,
 {
     fn fmt(&self, node: &N, f: &mut GraphqlFormatter) -> FormatResult<()> {
-        if self.is_suppressed(node, f) {
+        if self.is_suppressed(node, f) || self.is_global_suppressed(node, f) {
             return write!(f, [format_suppressed_node(node.syntax())]);
         }
 
@@ -192,6 +199,11 @@ where
     /// Returns `true` if the node has a suppression comment and should use the same formatting as in the source document.
     fn is_suppressed(&self, node: &N, f: &GraphqlFormatter) -> bool {
         f.context().comments().is_suppressed(node.syntax())
+    }
+
+    /// Returns `true` if the node has a global suppression comment and should use the same formatting as in the source document.
+    fn is_global_suppressed(&self, node: &N, f: &GraphqlFormatter) -> bool {
+        f.context().comments().is_global_suppressed(node.syntax())
     }
 
     /// Formats the [leading comments](biome_formatter::comments#leading-comments) of the node.
@@ -235,13 +247,41 @@ where
 }
 
 /// Format implementation specific to Graphql tokens.
-pub(crate) type FormatGraphqlSyntaxToken = FormatToken<GraphqlFormatContext>;
+#[derive(Debug, Default)]
+pub(crate) struct FormatGraphqlSyntaxToken;
+
+impl FormatRule<SyntaxToken<GraphqlLanguage>> for FormatGraphqlSyntaxToken {
+    type Context = GraphqlFormatContext;
+
+    fn fmt(
+        &self,
+        token: &GraphqlSyntaxToken,
+        f: &mut Formatter<Self::Context>,
+    ) -> FormatResult<()> {
+        f.state_mut().track_token(token);
+
+        self.format_skipped_token_trivia(token, f)?;
+        self.format_trimmed_token_trivia(token, f)?;
+
+        Ok(())
+    }
+}
+
+impl FormatToken<GraphqlLanguage, GraphqlFormatContext> for FormatGraphqlSyntaxToken {
+    fn format_skipped_token_trivia(
+        &self,
+        token: &GraphqlSyntaxToken,
+        f: &mut Formatter<GraphqlFormatContext>,
+    ) -> FormatResult<()> {
+        format_skipped_token_trivia(token).fmt(f)
+    }
+}
 
 impl AsFormat<GraphqlFormatContext> for GraphqlSyntaxToken {
     type Format<'a> = FormatRefWithRule<'a, Self, FormatGraphqlSyntaxToken>;
 
     fn format(&self) -> Self::Format<'_> {
-        FormatRefWithRule::new(self, FormatGraphqlSyntaxToken::default())
+        FormatRefWithRule::new(self, FormatGraphqlSyntaxToken)
     }
 }
 
@@ -249,7 +289,7 @@ impl IntoFormat<GraphqlFormatContext> for GraphqlSyntaxToken {
     type Format = FormatOwnedWithRule<Self, FormatGraphqlSyntaxToken>;
 
     fn into_format(self) -> Self::Format {
-        FormatOwnedWithRule::new(self, FormatGraphqlSyntaxToken::default())
+        FormatOwnedWithRule::new(self, FormatGraphqlSyntaxToken)
     }
 }
 
@@ -282,6 +322,7 @@ impl FormatLanguage for GraphqlFormatLanguage {
         self,
         root: &GraphqlSyntaxNode,
         source_map: Option<TransformSourceMap>,
+        _delegate_fmt_embedded_nodes: bool,
     ) -> Self::Context {
         let comments = Comments::from_node(root, &GraphqlCommentStyle, source_map.as_ref());
         GraphqlFormatContext::new(self.options, comments).with_source_map(source_map)
@@ -314,7 +355,17 @@ pub fn format_node(
     options: GraphqlFormatOptions,
     root: &GraphqlSyntaxNode,
 ) -> FormatResult<Formatted<GraphqlFormatContext>> {
-    biome_formatter::format_node(root, GraphqlFormatLanguage::new(options))
+    biome_formatter::format_node(root, GraphqlFormatLanguage::new(options), false)
+}
+
+/// Formats a GraphQL syntax tree.
+///
+/// It returns the [Formatted] document that can be printed to a string.
+pub fn format_node_with_offset(
+    options: GraphqlFormatOptions,
+    root: &GraphqlSyntaxNodeWithOffset,
+) -> FormatResult<Formatted<GraphqlFormatContext>> {
+    biome_formatter::format_node_with_offset(root, GraphqlFormatLanguage::new(options), false)
 }
 
 /// Formats a single node within a file, supported by Biome.

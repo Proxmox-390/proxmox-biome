@@ -599,9 +599,11 @@ pub struct NoConsoleOptions {
     /// Allowed calls on the console object.
     pub allow: Box<[Box<str>]>,
 }
-impl From<NoConsoleOptions> for biome_js_analyze::lint::suspicious::no_console::NoConsoleOptions {
+impl From<NoConsoleOptions> for biome_rule_options::no_console::NoConsoleOptions {
     fn from(val: NoConsoleOptions) -> Self {
-        Self { allow: val.allow }
+        Self {
+            allow: (!val.allow.is_empty()).then_some(val.allow),
+        }
     }
 }
 

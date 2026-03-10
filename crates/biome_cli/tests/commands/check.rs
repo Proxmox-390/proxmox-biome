@@ -57,26 +57,8 @@ const UPGRADE_SEVERITY_CODE: &str = r#"if(!cond) { exprA(); } else { exprB() }"#
 const NURSERY_UNSTABLE: &str = r#"if(a = b) {}"#;
 
 #[test]
-fn check_help() {
-    let fs = MemoryFileSystem::default();
-    let mut console = BufferConsole::default();
-
-    let (fs, result) = run_cli(fs, &mut console, Args::from(["check", "--help"].as_slice()));
-
-    assert!(result.is_ok(), "run_cli returned {result:?}");
-
-    assert_cli_snapshot(SnapshotPayload::new(
-        module_path!(),
-        "check_help",
-        fs,
-        console,
-        result,
-    ));
-}
-
-#[test]
 fn ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -93,7 +75,7 @@ fn ok() {
 
 #[test]
 fn ok_read_only() {
-    let mut fs = MemoryFileSystem::new_read_only();
+    let fs = MemoryFileSystem::new_read_only();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -110,7 +92,7 @@ fn ok_read_only() {
 
 #[test]
 fn parse_error() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -134,7 +116,7 @@ fn parse_error() {
 
 #[test]
 fn lint_error() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -159,7 +141,7 @@ fn lint_error() {
 
 #[test]
 fn maximum_diagnostics() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
     let file_path = Utf8Path::new("check.js");
     fs.insert(file_path.into(), ERRORS.as_bytes());
@@ -205,7 +187,7 @@ fn maximum_diagnostics() {
 
 #[test]
 fn apply_ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -238,7 +220,7 @@ fn apply_ok() {
 
 #[test]
 fn apply_noop() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -263,7 +245,7 @@ fn apply_noop() {
 
 #[test]
 fn apply_suggested_error() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -288,7 +270,7 @@ fn apply_suggested_error() {
 
 #[test]
 fn apply_suggested() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -321,7 +303,7 @@ fn apply_suggested() {
 
 #[test]
 fn apply_unsafe_with_error() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     // last line doesn't have code fix
@@ -373,7 +355,7 @@ function _f() {\n\targuments;\n}
 
 #[test]
 fn no_lint_if_linter_is_disabled_when_run_apply() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -409,7 +391,7 @@ fn no_lint_if_linter_is_disabled_when_run_apply() {
 
 #[test]
 fn no_lint_if_linter_is_disabled_when_run_apply_biome_jsonc() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -445,7 +427,7 @@ fn no_lint_if_linter_is_disabled_when_run_apply_biome_jsonc() {
 
 #[test]
 fn no_lint_if_linter_is_disabled() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -481,7 +463,7 @@ fn no_lint_if_linter_is_disabled() {
 
 #[test]
 fn should_disable_a_rule() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -517,7 +499,7 @@ fn should_disable_a_rule() {
 
 #[test]
 fn should_disable_a_rule_group() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -556,7 +538,7 @@ fn should_disable_a_rule_group() {
 
 #[test]
 fn downgrade_severity() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
     let file_path = Utf8Path::new("biome.json");
     fs.insert(
@@ -600,7 +582,7 @@ fn downgrade_severity() {
 
 #[test]
 fn upgrade_severity() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
     let file_path = Utf8Path::new("biome.json");
     fs.insert(
@@ -646,8 +628,200 @@ fn upgrade_severity() {
 }
 
 #[test]
+fn check_only_applies_selected_rule() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let file_path = Utf8Path::new("file.js");
+    fs.insert(file_path.into(), "debugger;\n".as_bytes());
+
+    let (_fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(["check", "--only=suspicious/noDebugger", file_path.as_str()].as_slice()),
+    );
+
+    assert!(result.is_err(), "run_cli returned {result:?}");
+
+    let messages = &console.out_buffer;
+
+    let error_count = messages
+        .iter()
+        .filter(|m| m.level == LogLevel::Error)
+        .filter(|m| {
+            let content = format!("{:#?}", m.content);
+            content.contains("suspicious/noDebugger")
+        })
+        .count();
+
+    assert_eq!(
+        error_count, 1,
+        "expected 1 error-level message for suspicious/noDebugger, found {error_count:?}: {messages:?}"
+    );
+}
+
+#[test]
+fn check_skip_suppresses_rule() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let file_path = Utf8Path::new("file.js");
+    fs.insert(file_path.into(), "debugger;\n".as_bytes());
+
+    let (_fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(["check", "--skip=suspicious/noDebugger", file_path.as_str()].as_slice()),
+    );
+
+    assert!(result.is_ok(), "run_cli returned {result:?}");
+
+    let messages = &console.out_buffer;
+    let error_count = messages
+        .iter()
+        .filter(|m| m.level == LogLevel::Error)
+        .filter(|m| {
+            let content = format!("{:#?}", m.content);
+            content.contains("suspicious/noDebugger")
+        })
+        .count();
+
+    assert_eq!(
+        error_count, 0,
+        "expected no suspicious/noDebugger errors when skipped, found {error_count:?}: {messages:?}"
+    );
+}
+
+#[test]
+fn check_skip_takes_precedence_over_only() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let file_path = Utf8Path::new("file.js");
+    fs.insert(file_path.into(), "debugger;\n".as_bytes());
+
+    let (_fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(
+            [
+                "check",
+                "--only=suspicious/noDebugger",
+                "--skip=suspicious/noDebugger",
+                file_path.as_str(),
+            ]
+            .as_slice(),
+        ),
+    );
+
+    assert!(result.is_ok(), "run_cli returned {result:?}");
+
+    let messages = &console.out_buffer;
+    let error_count = messages
+        .iter()
+        .filter(|m| m.level == LogLevel::Error)
+        .filter(|m| {
+            let content = format!("{:#?}", m.content);
+            content.contains("suspicious/noDebugger")
+        })
+        .count();
+
+    assert_eq!(
+        error_count, 0,
+        "expected skip to win over only, but found {error_count:?} error messages: {messages:?}"
+    );
+}
+
+#[test]
+fn check_only_assist_action() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let file_path = Utf8Path::new("file.js");
+    fs.insert(
+        file_path.into(),
+        "import b from \"b\";\nimport a from \"a\";\n".as_bytes(),
+    );
+
+    let (_fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(
+            [
+                "check",
+                "--assist-enabled=true",
+                "--only=assist/source/organizeImports",
+                file_path.as_str(),
+            ]
+            .as_slice(),
+        ),
+    );
+
+    assert!(result.is_err(), "run_cli returned {result:?}");
+
+    let messages = &console.out_buffer;
+    let error_count = messages
+        .iter()
+        .filter(|m| m.level == LogLevel::Error)
+        .filter(|m| {
+            let content = format!("{:#?}", m.content);
+            content.contains("assist/source/organizeImports")
+        })
+        .count();
+
+    assert_eq!(
+        error_count, 1,
+        "expected assist action to be enforced when selected with --only, found {error_count:?}: {messages:?}"
+    );
+}
+
+#[test]
+fn check_skip_assist_action_and_group() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let file_path = Utf8Path::new("file.js");
+    fs.insert(
+        file_path.into(),
+        "import b from \"b\";\nimport a from \"a\";\n".as_bytes(),
+    );
+
+    let (_fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(
+            [
+                "check",
+                "--assist-enabled=true",
+                "--only=assist/source",
+                "--skip=assist/source/organizeImports",
+                file_path.as_str(),
+            ]
+            .as_slice(),
+        ),
+    );
+
+    assert!(result.is_ok(), "run_cli returned {result:?}");
+
+    let messages = &console.out_buffer;
+    let error_count = messages
+        .iter()
+        .filter(|m| m.level == LogLevel::Error)
+        .filter(|m| {
+            let content = format!("{:#?}", m.content);
+            content.contains("assist/source/organizeImports")
+        })
+        .count();
+
+    assert_eq!(
+        error_count, 0,
+        "expected assist action to be skipped when group and action are both provided, found {error_count:?}: {messages:?}"
+    );
+}
+
+#[test]
 fn no_lint_when_file_is_ignored() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("biome.json");
@@ -686,7 +860,7 @@ fn no_lint_when_file_is_ignored() {
 
 #[test]
 fn no_lint_if_files_are_listed_in_ignore_option() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("biome.json");
@@ -915,13 +1089,13 @@ fn fs_error_infinite_symlink_expansion_to_files() {
 
 #[test]
 fn fs_error_read_only() {
-    let mut fs = MemoryFileSystem::new_read_only();
+    let fs = MemoryFileSystem::new_read_only();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("test.js");
     fs.insert(file_path.into(), *b"content");
 
-    let (mut fs, result) = run_cli(
+    let (fs, result) = run_cli(
         fs,
         &mut console,
         Args::from(["check", "--write", file_path.as_str()].as_slice()),
@@ -1091,13 +1265,13 @@ fn fs_files_ignore_symlink() {
 
 #[test]
 fn file_too_large() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
     fs.insert(file_path.into(), "statement();\n".repeat(80660).as_bytes());
 
-    let (mut fs, result) = run_cli(
+    let (fs, result) = run_cli(
         fs,
         &mut console,
         Args::from(["check", file_path.as_str()].as_slice()),
@@ -1119,7 +1293,7 @@ fn file_too_large() {
 
 #[test]
 fn file_too_large_config_limit() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     fs.insert(Utf8PathBuf::from("biome.json"), CONFIG_FILE_SIZE_LIMIT);
@@ -1146,7 +1320,7 @@ fn file_too_large_config_limit() {
 
 #[test]
 fn file_too_large_cli_limit() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -1171,7 +1345,7 @@ fn file_too_large_cli_limit() {
 
 #[test]
 fn files_max_size_parse_error() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -1196,7 +1370,7 @@ fn files_max_size_parse_error() {
 
 #[test]
 fn max_diagnostics_default() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     // Creates 40 diagnostics.
@@ -1237,7 +1411,7 @@ fn max_diagnostics_default() {
 
 #[test]
 fn max_diagnostics() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     for i in 0..20 {
@@ -1306,7 +1480,7 @@ fn no_supported_file_found() {
 }
 #[test]
 fn print_verbose() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -1331,7 +1505,7 @@ fn print_verbose() {
 
 #[test]
 fn print_verbose_write() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -1356,7 +1530,7 @@ fn print_verbose_write() {
 
 #[test]
 fn unsupported_file() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.txt");
@@ -1380,7 +1554,7 @@ fn unsupported_file() {
 
 #[test]
 fn unsupported_file_verbose() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.txt");
@@ -1404,7 +1578,7 @@ fn unsupported_file_verbose() {
 
 #[test]
 fn suppression_syntax_error() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -1429,7 +1603,7 @@ fn suppression_syntax_error() {
 
 #[test]
 fn config_recommended_group() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("biome.json");
@@ -1455,7 +1629,7 @@ fn config_recommended_group() {
 
 #[test]
 fn nursery_unstable() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -1480,7 +1654,7 @@ fn nursery_unstable() {
 
 #[test]
 fn applies_organize_imports() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let config = r#"{ "linter": { "enabled": false }, "assist": { "enabled": true } }"#;
@@ -1517,7 +1691,7 @@ import * as something from "../something";
 
 #[test]
 fn applies_organize_imports_bug_4552() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let config = r#"{
@@ -1560,7 +1734,7 @@ fn applies_organize_imports_bug_4552() {
 
 #[test]
 fn shows_organize_imports_diff_on_check_when_enforced() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -1590,7 +1764,7 @@ import * as something from "../something";
 
 #[test]
 fn should_organize_imports_diff_on_check() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -1631,7 +1805,7 @@ import * as something from "../something";
 
 #[test]
 fn dont_applies_organize_imports_for_ignored_file() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let rome_json = r#"{ "assist": { "enabled": true, "includes": ["**", "!check.js"] }, "linter": { "enabled": false } }"#;
@@ -1666,7 +1840,7 @@ import * as something from "../something";
 
 #[test]
 fn applies_organize_imports_from_cli() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -1705,7 +1879,7 @@ import { lorem, foom, bar } from "foo";
 
 #[test]
 fn ignore_configured_globals() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let rome_json = r#"{
@@ -1782,7 +1956,7 @@ fn check_stdin_write_successfully() {
 
 #[test]
 fn check_stdin_applies_the_config_based_on_path() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     fs.insert(
@@ -2050,8 +2224,56 @@ fn check_stdin_returns_content_when_not_write() {
 }
 
 #[test]
+fn check_stdin_ignores_unknown_file_path() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    console
+        .in_buffer
+        .push("function f() {var x=1; return{x}} class Foo {}".to_string());
+
+    let (fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(
+            [
+                "lint",
+                "--write",
+                "--unsafe",
+                "--stdin-file-path",
+                "mock.cc",
+                "--files-ignore-unknown",
+                "true",
+            ]
+            .as_slice(),
+        ),
+    );
+
+    assert!(result.is_ok(), "run_cli returned {result:?}");
+
+    let message = console
+        .out_buffer
+        .first()
+        .expect("Console should have written a message");
+
+    let content = markup_to_string(markup! {
+        {message.content}
+    });
+
+    assert_eq!(content, "function f() {var x=1; return{x}} class Foo {}");
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "check_stdin_ignores_unknown_file_path",
+        fs,
+        console,
+        result,
+    ));
+}
+
+#[test]
 fn should_apply_correct_file_source() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("file.ts");
@@ -2101,7 +2323,7 @@ fn should_apply_correct_file_source() {
 
 #[test]
 fn should_not_enable_all_recommended_rules() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let configuration = r#"	{
@@ -2158,7 +2380,7 @@ fn should_not_enable_all_recommended_rules() {
 
 #[test]
 fn should_not_disable_recommended_rules_for_a_group() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let configuration = r#"	{
@@ -2207,7 +2429,7 @@ array.map((sentence) => sentence.split(" ")).flat();
 
 #[test]
 fn apply_bogus_argument() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -2235,7 +2457,7 @@ fn apply_bogus_argument() {
 
 #[test]
 fn ignores_unknown_file() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path1 = Utf8Path::new("test.txt");
@@ -2269,7 +2491,7 @@ fn ignores_unknown_file() {
 
 #[test]
 fn check_json_files() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path1 = Utf8Path::new("test.json");
@@ -2335,7 +2557,7 @@ fn doesnt_error_if_no_files_were_processed() {
 #[test]
 fn should_pass_if_there_are_only_warnings() {
     let mut console = BufferConsole::default();
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
 
     let file_path = Utf8Path::new("biome.json");
     fs.insert(
@@ -2384,7 +2606,7 @@ A = 0;
 #[test]
 fn does_error_with_only_warnings() {
     let mut console = BufferConsole::default();
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
 
     let file_path = Utf8Path::new("biome.json");
     fs.insert(
@@ -2441,7 +2663,7 @@ A = 0;
 
 #[test]
 fn use_literal_keys_should_emit_correct_ast_issue_266() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -2471,7 +2693,7 @@ fn use_literal_keys_should_emit_correct_ast_issue_266() {
 
 #[test]
 fn should_show_formatter_diagnostics_for_files_ignored_by_linter() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("build/file.js");
@@ -2519,7 +2741,7 @@ fn should_show_formatter_diagnostics_for_files_ignored_by_linter() {
 
 #[test]
 fn print_json() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -2553,7 +2775,7 @@ fn print_json() {
 
 #[test]
 fn print_json_pretty() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -2587,7 +2809,7 @@ fn print_json_pretty() {
 
 #[test]
 fn lint_error_without_file_paths() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -2608,7 +2830,7 @@ fn lint_error_without_file_paths() {
 
 #[test]
 fn fix_ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
     let file_path = Utf8Path::new("fix.js");
     fs.insert(file_path.into(), FIX_BEFORE.as_bytes());
@@ -2636,7 +2858,7 @@ fn fix_ok() {
 
 #[test]
 fn fix_unsafe_ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
     let file_path = Utf8Path::new("fix.js");
     fs.insert(file_path.into(), FIX_BEFORE.as_bytes());
@@ -2667,7 +2889,7 @@ fn fix_unsafe_ok() {
 
 #[test]
 fn fix_noop() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -2691,7 +2913,7 @@ fn fix_noop() {
 
 #[test]
 fn fix_suggested_error() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
     let file_path = Utf8Path::new("fix.js");
     fs.insert(file_path.into(), APPLY_SUGGESTED_BEFORE.as_bytes());
@@ -2713,7 +2935,7 @@ fn fix_suggested_error() {
 
 #[test]
 fn fix_unsafe_with_error() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     // last line doesn't have code fix
@@ -2753,7 +2975,7 @@ function _f() {\n\targuments;\n}
 
 #[test]
 fn write_ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
     let file_path = Utf8Path::new("fix.js");
     fs.insert(file_path.into(), FIX_BEFORE.as_bytes());
@@ -2781,7 +3003,7 @@ fn write_ok() {
 
 #[test]
 fn write_unsafe_ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
     let file_path = Utf8Path::new("fix.js");
     fs.insert(file_path.into(), FIX_BEFORE.as_bytes());
@@ -2812,7 +3034,7 @@ fn write_unsafe_ok() {
 
 #[test]
 fn write_noop() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -2836,7 +3058,7 @@ fn write_noop() {
 
 #[test]
 fn write_suggested_error() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
     let file_path = Utf8Path::new("fix.js");
     fs.insert(file_path.into(), APPLY_SUGGESTED_BEFORE.as_bytes());
@@ -2858,7 +3080,7 @@ fn write_suggested_error() {
 
 #[test]
 fn write_unsafe_with_error() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     // last line doesn't have code fix
@@ -2908,7 +3130,7 @@ function _f() {\n\targuments;\n}
 #[test]
 fn should_error_if_unstaged_files_only_with_staged_flag() {
     let mut console = BufferConsole::default();
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     // Unstaged
     fs.insert(
         Utf8Path::new("file1.js").into(),
@@ -2933,7 +3155,7 @@ fn should_error_if_unstaged_files_only_with_staged_flag() {
 #[test]
 fn should_error_if_unchanged_files_only_with_changed_flag() {
     let mut console = BufferConsole::default();
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     // Unchanged
     fs.insert(
         Utf8Path::new("file1.js").into(),
@@ -2956,7 +3178,7 @@ fn should_error_if_unchanged_files_only_with_changed_flag() {
 
 #[test]
 fn html_enabled_by_arg_check() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("file.html");
@@ -2991,7 +3213,7 @@ fn html_enabled_by_arg_check() {
 
 #[test]
 fn check_skip_parse_errors() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let valid = Utf8Path::new("valid.js");
@@ -3027,7 +3249,7 @@ fn check_skip_parse_errors() {
 
 #[test]
 fn check_plugin_suppressions() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     fs.insert(
@@ -3083,8 +3305,127 @@ fn check_plugin_suppressions() {
 }
 
 #[test]
+fn check_json_plugin() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    fs.insert(
+        Utf8PathBuf::from("biome.json"),
+        br#"{
+    "plugins": ["noTestName.grit"],
+    "formatter": {
+        "enabled": false
+    }
+}"#,
+    );
+
+    fs.insert(
+        Utf8PathBuf::from("noTestName.grit"),
+        br#"language json
+
+`"test"` as $val where {
+    register_diagnostic(span = $val, message = "Avoid using 'test' as package name.", severity = "error")
+}
+"#,
+    );
+
+    let file_path = "package.json";
+    fs.insert(
+        file_path.into(),
+        br#"{
+    "name": "test",
+    "version": "1.0.0"
+}"#,
+    );
+
+    let (fs, result) = run_cli_with_server_workspace(
+        fs,
+        &mut console,
+        Args::from(["check", file_path].as_slice()),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "check_json_plugin",
+        fs,
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn check_plugin_diagnostic_offset_in_vue_file() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    fs.insert(
+        Utf8PathBuf::from("biome.json"),
+        br#"{
+    "overrides": [
+        {
+            "includes": ["**/*.vue"],
+            "plugins": ["noFoo.grit"]
+        }
+    ]
+}
+"#,
+    );
+
+    fs.insert(
+        Utf8PathBuf::from("noFoo.grit"),
+        br#"language js;
+
+JsIdentifierBinding() as $name where {
+    $name <: r"^foo$",
+    register_diagnostic(
+        span = $name,
+        message = "Avoid using 'foo' as a variable name.",
+        severity = "error"
+    )
+}
+"#,
+    );
+
+    // The template is intentionally multi-line so that if the diagnostic offset
+    // is not applied, the reported span would point into the template instead of
+    // the script section.
+    let file_path = "file.vue";
+    fs.insert(
+        file_path.into(),
+        br#"<template>
+<p>line 1</p>
+<p>line 2</p>
+<p>line 3</p>
+<p>line 4</p>
+<p>line 5</p>
+<p>line 6</p>
+<p>line 7</p>
+<p>line 8</p>
+<p>line 9</p>
+<p>line 10</p>
+</template>
+
+<script setup lang="ts">
+const foo = 'bad'
+</script>
+"#,
+    );
+
+    let (fs, result) =
+        run_cli_with_server_workspace(fs, &mut console, Args::from(["lint", file_path].as_slice()));
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "check_plugin_diagnostic_offset_in_vue_file",
+        fs,
+        console,
+        result,
+    ));
+}
+
+#[test]
 fn doesnt_check_file_when_assist_is_disabled() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     fs.insert(
@@ -3122,6 +3463,117 @@ fn doesnt_check_file_when_assist_is_disabled() {
     assert_cli_snapshot(SnapshotPayload::new(
         module_path!(),
         "doesnt_check_file_when_assist_is_disabled",
+        fs,
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn check_returns_error_for_css_sorting() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    fs.insert(
+        "biome.json".into(),
+        r#"{
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "useSortedProperties": "on"
+      }
+    }
+  }
+}"#,
+    );
+
+    let file_path = Utf8Path::new("src/file.css");
+    fs.insert(
+        file_path.into(),
+        r#"body {
+  padding: 1em;
+  color: red;
+  display: block;
+}
+"#
+        .as_bytes(),
+    );
+
+    let (fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(["check", file_path.as_str()].as_slice()),
+    );
+
+    assert!(result.is_err(), "run_cli returned {result:?}");
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "check_returns_error_for_css_sorting",
+        fs,
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn check_does_not_enable_assist() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let file = Utf8Path::new("file.js");
+
+    fs.insert(
+        file.into(),
+        "import z from \"zod\"; \n import foo from \"foo\";".as_bytes(),
+    );
+
+    let (fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(["check", "--assist-enabled=false", file.as_str()].as_slice()),
+    );
+
+    assert!(result.is_err(), "run_cli returned {result:?}");
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "ci_does_not_enable_assist",
+        fs,
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn check_format_with_syntax_errors_when_flag_enabled() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let invalid = Utf8Path::new("invalid.js");
+    fs.insert(invalid.into(), "while ) {}".as_bytes());
+
+    let (fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(
+            [
+                "check",
+                "--format-with-errors=true",
+                "--write",
+                invalid.as_str(),
+            ]
+            .as_slice(),
+        ),
+    );
+
+    assert!(result.is_err(), "run_cli returned {result:?}");
+
+    assert_file_contents(&fs, invalid, "while ) {}\n");
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "check_format_with_syntax_errors_when_flag_enabled",
         fs,
         console,
         result,

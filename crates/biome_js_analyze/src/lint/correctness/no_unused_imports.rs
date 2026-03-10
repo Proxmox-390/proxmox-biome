@@ -1,9 +1,11 @@
 use crate::services::semantic::{SemanticModelBuilderVisitor, SemanticServices};
 use crate::{
     JsRuleAction,
-    react::{ReactLibrary, is_global_react_import},
+    react::{ReactLibrary, is_global_react_import, is_jsx_factory_import},
 };
+use biome_rule_options::no_unused_imports::NoUnusedImportsOptions;
 
+use crate::services::embedded_bindings::EmbeddedBindings;
 use biome_analyze::{
     AddVisitor, FixKind, FromServices, Phase, Phases, QueryKey, Queryable, Rule, RuleDiagnostic,
     RuleKey, RuleMetadata, RuleSource, ServiceBag, ServicesDiagnostic, SyntaxVisitor, Visitor,
@@ -16,14 +18,15 @@ use biome_js_factory::make;
 use biome_js_factory::make::{js_identifier_binding, js_module, js_module_item_list};
 use biome_js_semantic::{ReferencesExtensions, SemanticModel};
 use biome_js_syntax::{
-    AnyJsBinding, AnyJsClassMember, AnyJsCombinedSpecifier, AnyJsDeclaration, AnyJsImportClause,
-    AnyJsNamedImportSpecifier, AnyTsTypeMember, JsExport, JsLanguage, JsNamedImportSpecifiers,
-    JsSyntaxNode, T, TsEnumMember,
+    AnyJsBinding, AnyJsClassMember, AnyJsCombinedSpecifier, AnyJsDeclaration, AnyJsExportClause,
+    AnyJsExportNamedSpecifier, AnyJsImportClause, AnyJsModuleItem, AnyJsNamedImportSpecifier,
+    AnyJsObjectMember, AnyTsTypeMember, EmbeddingKind, JsExport, JsFileSource, JsLanguage,
+    JsNamedImportSpecifiers, JsStaticMemberAssignment, JsSyntaxNode, T, TsEnumMember,
 };
 use biome_jsdoc_comment::JsdocComment;
 use biome_rowan::{
-    AstNode, AstSeparatedElement, AstSeparatedList, BatchMutationExt, Language, NodeOrToken,
-    SyntaxNode, TextRange, TriviaPieceKind, WalkEvent, declare_node_union,
+    AstNode, AstNodeList, AstSeparatedElement, AstSeparatedList, BatchMutationExt, Language,
+    NodeOrToken, SyntaxNode, TextRange, TriviaPieceKind, WalkEvent, declare_node_union,
 };
 use regex::Regex;
 use rustc_hash::FxHashSet;
@@ -65,10 +68,12 @@ declare_lint_rule! {
     /// export { B }
     /// ```
     ///
-    /// ```js,expect_diagnostic
+    /// ```ts,expect_diagnostic
     /// // Header comment
     /// import /*inner comment */ A from 'mod'; // Associated comment
+    /// ```
     ///
+    /// ```ts,expect_diagnostic
     /// // Another header comment
     /// import {
     ///     // A's header comment
@@ -88,6 +93,12 @@ declare_lint_rule! {
     /// function f(arg: B): A {
     ///     return new A(arg);
     /// }
+    /// ```
+    ///
+    /// One notable exception is when the import is intended to be used for type augmentation.
+    ///
+    /// ```ts
+    /// import type {} from '@mui/lab/themeAugmentation';
     /// ```
     pub NoUnusedImports {
         version: "1.3.0",
@@ -119,15 +130,15 @@ impl DerefMut for JsDocTypeModel {
 }
 
 #[derive(Default)]
-struct JsDocTypeCollectorVisitior {
+struct JsDocTypeCollectorVisitor {
     jsdoc_types: JsDocTypeModel,
 }
 
 declare_node_union! {
-    pub AnyJsWithTypeReferencingJsDoc = AnyJsDeclaration | AnyJsClassMember | AnyTsTypeMember | TsEnumMember | JsExport
+    pub AnyJsWithTypeReferencingJsDoc = AnyJsDeclaration | AnyJsClassMember | AnyJsObjectMember | AnyTsTypeMember | TsEnumMember | JsExport | JsStaticMemberAssignment
 }
 
-impl Visitor for JsDocTypeCollectorVisitior {
+impl Visitor for JsDocTypeCollectorVisitor {
     type Language = JsLanguage;
     fn visit(
         &mut self,
@@ -155,8 +166,9 @@ fn load_jsdoc_types_from_node(model: &mut JsDocTypeModel, node: &SyntaxNode<JsLa
     });
 }
 
-static JSDOC_INLINE_TAG_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\{@(link|see)\s*([^}| #\.]+)(?:[^}]+)?\}").unwrap());
+static JSDOC_INLINE_TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\{@(linkcode|linkplain|link|see)\s*([^}| #\.]+)(?:[^}]+)?\}").unwrap()
+});
 
 static JSDOC_TYPE_TAG_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"@(param|returns|type|typedef)\s*\{([^}]+)\}").unwrap());
@@ -212,6 +224,7 @@ impl FromServices for JsDocTypeServices {
         let jsdoc_types: &JsDocTypeModel = services
             .get_service()
             .ok_or_else(|| ServicesDiagnostic::new(rule_key.rule_name(), &["JsDocTypeModel"]))?;
+
         Ok(Self {
             jsdoc_types: jsdoc_types.clone(),
             semantic_services: SemanticServices::from_services(rule_key, rule_metadata, services)?,
@@ -240,7 +253,7 @@ impl Queryable for NoUnusedImportsQuery {
         root: &<Self::Language as Language>::Root,
     ) {
         analyzer.add_visitor(Phases::Syntax, || SemanticModelBuilderVisitor::new(root));
-        analyzer.add_visitor(Phases::Syntax, JsDocTypeCollectorVisitior::default);
+        analyzer.add_visitor(Phases::Syntax, JsDocTypeCollectorVisitor::default);
         analyzer.add_visitor(Phases::Semantic, SyntaxVisitor::default);
     }
 
@@ -257,9 +270,13 @@ impl Rule for NoUnusedImports {
     type Query = NoUnusedImportsQuery;
     type State = Unused;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoUnusedImportsOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
+        let embedded_bindings = ctx
+            .get_service::<EmbeddedBindings>()
+            .expect("embedded bindings service");
+
         match ctx.query() {
             AnyJsImportClause::JsImportBareClause(_) => {
                 // ignore bare imports (aka side-effect imports) such as `import "mod"`.
@@ -267,10 +284,12 @@ impl Rule for NoUnusedImports {
             }
             AnyJsImportClause::JsImportCombinedClause(clause) => {
                 let default_local_name = clause.default_specifier().ok()?.local_name().ok()?;
-                let is_default_import_unused = is_unused(ctx, &default_local_name);
+
+                let is_default_import_unused =
+                    is_unused(ctx, embedded_bindings, &default_local_name);
                 let (is_combined_unused, named_import_range) = match clause.specifier().ok()? {
                     AnyJsCombinedSpecifier::JsNamedImportSpecifiers(specifiers) => {
-                        match unused_named_specifiers(ctx, &specifiers) {
+                        match unused_named_specifiers(ctx, embedded_bindings, &specifiers) {
                             Some(Unused::AllImports(range) | Unused::EmptyStatement(range)) => {
                                 (true, range)
                             }
@@ -289,7 +308,10 @@ impl Rule for NoUnusedImports {
                     }
                     AnyJsCombinedSpecifier::JsNamespaceImportSpecifier(specifier) => {
                         let local_name = specifier.local_name().ok()?;
-                        (is_unused(ctx, &local_name), local_name.range())
+                        (
+                            is_unused(ctx, embedded_bindings, &local_name),
+                            local_name.range(),
+                        )
                     }
                 };
                 match (is_default_import_unused, is_combined_unused) {
@@ -304,14 +326,25 @@ impl Rule for NoUnusedImports {
             }
             AnyJsImportClause::JsImportDefaultClause(clause) => {
                 let local_name = clause.default_specifier().ok()?.local_name().ok()?;
-                is_unused(ctx, &local_name).then_some(Unused::AllImports(local_name.range()))
+                is_unused(ctx, embedded_bindings, &local_name)
+                    .then_some(Unused::AllImports(local_name.range()))
             }
             AnyJsImportClause::JsImportNamedClause(clause) => {
-                unused_named_specifiers(ctx, &clause.named_specifiers().ok()?)
+                // exception: allow type augmentation imports
+                // eg. `import type {} from ...`
+                // https://github.com/biomejs/biome/issues/6669
+                if clause.type_token().is_some()
+                    && clause.named_specifiers().ok()?.specifiers().is_empty()
+                {
+                    return None;
+                }
+
+                unused_named_specifiers(ctx, embedded_bindings, &clause.named_specifiers().ok()?)
             }
             AnyJsImportClause::JsImportNamespaceClause(clause) => {
                 let local_name = clause.namespace_specifier().ok()?.local_name().ok()?;
-                is_unused(ctx, &local_name).then_some(Unused::AllImports(local_name.range()))
+                is_unused(ctx, embedded_bindings, &local_name)
+                    .then_some(Unused::AllImports(local_name.range()))
             }
         }
     }
@@ -427,7 +460,51 @@ impl Rule for NoUnusedImports {
                         mutation.replace_node_discard_trivia(root.clone(), new_root);
                     }
                 }
-                mutation.remove_element(parent.into());
+
+                // In TypeScript, a file without any import or export statements is
+                // treated as an ambient module, making all declarations global.
+                // If removing this import leaves no other imports or exports,
+                // replace it with `export {}` to preserve the module boundary.
+                // This does not apply to embedded scripts (Vue, Svelte, Astro),
+                // which are already in a module context.
+                let source_type = ctx.source_type::<JsFileSource>();
+                let is_embedded = !matches!(source_type.as_embedding_kind(), EmbeddingKind::None);
+                let needs_export_empty = !is_embedded
+                    && source_type.language().is_typescript()
+                    && root.as_js_module().is_some_and(|module| {
+                        !module.items().iter().any(|item: AnyJsModuleItem| {
+                            if item.syntax() == &parent {
+                                return false;
+                            }
+                            matches!(
+                                item,
+                                AnyJsModuleItem::JsExport(_) | AnyJsModuleItem::JsImport(_)
+                            )
+                        })
+                    });
+
+                if needs_export_empty {
+                    let export_token = make::token(T![export])
+                        .with_trailing_trivia([(TriviaPieceKind::Whitespace, " ")]);
+                    let export_empty = make::js_export(
+                        make::js_decorator_list([]),
+                        export_token,
+                        AnyJsExportClause::JsExportNamedClause(
+                            make::js_export_named_clause(
+                                make::token(T!['{']),
+                                make::js_export_named_specifier_list(
+                                    std::iter::empty::<AnyJsExportNamedSpecifier>(),
+                                    std::iter::empty(),
+                                ),
+                                make::token(T!['}']),
+                            )
+                            .build(),
+                        ),
+                    );
+                    mutation.replace_element(parent.into(), export_empty.syntax().clone().into());
+                } else {
+                    mutation.remove_element(parent.into());
+                }
             }
             Unused::DefaultImport(_) => {
                 let prev_clause = node.as_js_import_combined_clause()?.clone();
@@ -530,10 +607,9 @@ impl Rule for NoUnusedImports {
                 for unused_specifier in unused_named_specifiers {
                     if let Some(NodeOrToken::Token(next_token)) =
                         unused_specifier.syntax().next_sibling_or_token()
+                        && next_token.kind() == T![,]
                     {
-                        if next_token.kind() == T![,] {
-                            mutation.remove_token(next_token);
-                        }
+                        mutation.remove_token(next_token);
                     }
                     mutation.remove_node(unused_specifier.clone());
                 }
@@ -573,6 +649,7 @@ pub enum Unused {
 
 fn unused_named_specifiers(
     ctx: &RuleContext<NoUnusedImports>,
+    embedded_bindings: &EmbeddedBindings,
     named_specifiers: &JsNamedImportSpecifiers,
 ) -> Option<Unused> {
     let specifiers = named_specifiers.specifiers();
@@ -586,7 +663,7 @@ fn unused_named_specifiers(
             let Some(local_name) = specifier.local_name() else {
                 continue;
             };
-            if is_unused(ctx, &local_name) {
+            if is_unused(ctx, embedded_bindings, &local_name) {
                 unused_imports.push(specifier);
             }
         }
@@ -602,14 +679,39 @@ fn unused_named_specifiers(
     }
 }
 
-fn is_unused(ctx: &RuleContext<NoUnusedImports>, local_name: &AnyJsBinding) -> bool {
+fn is_unused(
+    ctx: &RuleContext<NoUnusedImports>,
+    embedded_bindings: &EmbeddedBindings,
+    local_name: &AnyJsBinding,
+) -> bool {
     let AnyJsBinding::JsIdentifierBinding(binding) = &local_name else {
         return false;
     };
-    if ctx.jsx_runtime() == JsxRuntime::ReactClassic
-        && is_global_react_import(binding, ReactLibrary::React)
-    {
+
+    let is_defined_in_embed = binding
+        .name_token()
+        .ok()
+        .is_some_and(|token| embedded_bindings.contains_binding(token.text_trimmed()));
+    if is_defined_in_embed {
         return false;
+    }
+
+    if ctx.jsx_runtime() == JsxRuntime::ReactClassic {
+        // Check for standard React import
+        if is_global_react_import(binding, ReactLibrary::React) {
+            return false;
+        }
+        // Check for custom JSX factory imports
+        if let Some(jsx_factory) = ctx.jsx_factory()
+            && is_jsx_factory_import(binding, jsx_factory)
+        {
+            return false;
+        }
+        if let Some(jsx_fragment_factory) = ctx.jsx_fragment_factory()
+            && is_jsx_factory_import(binding, jsx_fragment_factory)
+        {
+            return false;
+        }
     }
 
     let jsdoc_types = ctx.jsdoc_types();
