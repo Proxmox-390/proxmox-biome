@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "tower-lsp-server"
-version = "0.22.0"
+version = "0.23.0"
 authors = ["Eyal Kalderon <ebkalderon@gmail.com>"]
 build = false
 exclude = ["FEATURES.md"]
@@ -37,7 +37,7 @@ repository = "https://github.com/tower-lsp-community/tower-lsp-server"
 
 [features]
 default = ["runtime-tokio"]
-proposed = ["lsp-types/proposed"]
+proposed = ["ls-types/proposed"]
 runtime-agnostic = ["async-codec-lite"]
 runtime-tokio = [
     "tokio",
@@ -85,14 +85,11 @@ default-features = false
 [dependencies.httparse]
 version = "1"
 
-[dependencies.lsp-types]
-version = "0.97"
+[dependencies.ls-types]
+version = "0.0"
 
 [dependencies.memchr]
 version = "2"
-
-[dependencies.percent-encoding]
-version = "2.3.1"
 
 [dependencies.serde]
 version = "1"
@@ -119,7 +116,7 @@ default-features = false
 version = "0.1"
 
 [dev-dependencies.async-tungstenite]
-version = "0.29"
+version = "0.32"
 features = ["tokio-runtime"]
 
 [dev-dependencies.tokio]

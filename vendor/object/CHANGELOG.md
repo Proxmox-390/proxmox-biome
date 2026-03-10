@@ -2,6 +2,304 @@
 
 --------------------------------------------------------------------------------
 
+## 0.37.3
+
+Released 2025/08/13.
+
+### Changed
+
+* Fixed MSVC weak extern symbol support in `write::Object` by using
+  `IMAGE_WEAK_EXTERN_SEARCH_ALIAS`.
+  [#803](https://github.com/gimli-rs/object/pull/803)
+
+### Added
+
+* Added `elf::SHT_GNU_SFRAME` and `elf::PT_GNU_SFRAME`.
+  [#799](https://github.com/gimli-rs/object/pull/799)
+
+* Added `section_flags_mut` and `symbol_flags_mut` to `write::Object`.
+  [#801](https://github.com/gimli-rs/object/pull/801)
+
+--------------------------------------------------------------------------------
+
+## 0.37.2
+
+Released 2025/08/01.
+
+### Added
+
+* Added `elf::EF_RISCV_RV64ILP32`.
+  [#779](https://github.com/gimli-rs/object/pull/779)
+
+* Added `pe::IMAGE_FILE_MACHINE_POWERPCBE` and associated read support.
+  [#783](https://github.com/gimli-rs/object/pull/783)
+
+* Added PowerPC support to `write::coff`.
+  [#795](https://github.com/gimli-rs/object/pull/795)
+
+* Added support for COFF auxiliary weak external symbols to `write::Object` and
+  `write::coff::Writer`.
+  [#791](https://github.com/gimli-rs/object/pull/791)
+
+* Added methods to `write::Object` to obtain default section and symbol flags.
+  [#789](https://github.com/gimli-rs/object/pull/789)
+
+* Added compact relocation support to `read::elf`.
+  [#782](https://github.com/gimli-rs/object/pull/782)
+  [#784](https://github.com/gimli-rs/object/pull/784)
+  [#785](https://github.com/gimli-rs/object/pull/785)
+  [#788](https://github.com/gimli-rs/object/pull/788)
+
+* Added `Architecture::Alpha`.
+  [#790](https://github.com/gimli-rs/object/pull/790)
+
+* Added `Architecture::Hppa`.
+  [#793](https://github.com/gimli-rs/object/pull/793)
+
+### Changed
+
+* Updated `wasmparser` dependency.
+
+* Changed `write::Object` to accept undefined symbols of unknown kind for COFF.
+  [#795](https://github.com/gimli-rs/object/pull/795)
+
+--------------------------------------------------------------------------------
+
+## 0.37.1
+
+Released 2025/06/11.
+
+### Changed
+
+* Removed `compiler-builtins` from `rustc-dep-of-std` dependencies.
+  [#777](https://github.com/gimli-rs/object/pull/777)
+
+* Updated `wasmparser` dependency.
+
+--------------------------------------------------------------------------------
+
+## 0.37.0
+
+Released 2025/06/02.
+
+### Breaking changes
+
+* Changed dyld cache definitions and API to support iterating mapping and slide information.
+  [#738](https://github.com/gimli-rs/object/pull/738)
+  [#753](https://github.com/gimli-rs/object/pull/753)
+  [#754](https://github.com/gimli-rs/object/pull/754)
+  [#775](https://github.com/gimli-rs/object/pull/775)
+
+* Removed `elf::R_RISCV_GNU_VTINHERIT` and `elf::R_RISCV_GNU_VTENTRY`.
+  [#767](https://github.com/gimli-rs/object/pull/767)
+
+* Changed the type of `pe::IMAGE_WEAK_EXTERN_*` constants.
+  [#770](https://github.com/gimli-rs/object/pull/770)
+
+### Added
+
+* Added support for generating `ARM_RELOC_VANILLA` in `write::Object`.
+  [#757](https://github.com/gimli-rs/object/pull/757)
+
+* Added `size_hint` for `read::archive::ArchiveSymbolIterator`.
+  [#759](https://github.com/gimli-rs/object/pull/759)
+
+* Added `Architecture::SuperH`.
+  [#762](https://github.com/gimli-rs/object/pull/762)
+
+* Added `Architecture::LoongArch32`.
+  [#765](https://github.com/gimli-rs/object/pull/765)
+
+* Added support for Wasm object files to `read::WasmFile`.
+  [#766](https://github.com/gimli-rs/object/pull/766)
+
+* Added `elf::R_RISCV_TLSDESC` and `elf::R_RISCV_GOT32_PCREL`.
+  [#767](https://github.com/gimli-rs/object/pull/767)
+  [#768](https://github.com/gimli-rs/object/pull/768)
+
+* Added `read::pe::SymbolTable::aux_weak_external` and `read::pe::SymbolTable::has_aux_weak_external`.
+  [#770](https://github.com/gimli-rs/object/pull/770)
+
+* Added ELF relocations for LoongArch ABI v2.30.
+  [#773](https://github.com/gimli-rs/object/pull/773)
+
+### Changed
+
+* Changed `ReadRef::read_bytes_at` to allow zero size reads at any offset.
+  This allows reading of empty sections in stripped ELF files.
+  [#758](https://github.com/gimli-rs/object/pull/758)
+
+* Changed `read::MachOFile::object_map` to include static symbols.
+  [#764](https://github.com/gimli-rs/object/pull/764)
+
+* Fixed `read::pe::SymbolTable::has_aux_function` to exclude weak externals.
+  [#772](https://github.com/gimli-rs/object/pull/772)
+
+* Updated `wasmparser` and `ruzstd` dependencies.
+
+--------------------------------------------------------------------------------
+
+## 0.36.7
+
+Released 2024/12/21.
+
+### Changed
+
+* Included `build.rs` in package.
+
+--------------------------------------------------------------------------------
+
+## 0.36.6
+
+Released 2024/12/21.
+
+### Added
+
+* Added `Architecuture::M68k`.
+  [#742](https://github.com/gimli-rs/object/pull/742)
+  [#749](https://github.com/gimli-rs/object/pull/749)
+
+* Added `Architecuture::Mips64_N32`.
+  [#743](https://github.com/gimli-rs/object/pull/743)
+
+* Added `elf::SHT_RELR`, `read::elf::SectionHeader::relr`, and
+  `write::elf::Writer::write_relative_relocation_section_header`.
+  [#746](https://github.com/gimli-rs/object/pull/746)
+
+* Added `core::error::Error` implementation for Rust 1.81 onwards.
+  [#747](https://github.com/gimli-rs/object/pull/747)
+
+### Changed
+
+* Changed `build::elf::Builder` to support `.annobin.notes`,
+  `SHT_LLVM_DEPENDENT_LIBRARIES`, and `SHT_RELR` sections.
+  [#735](https://github.com/gimli-rs/object/pull/735)
+  [#737](https://github.com/gimli-rs/object/pull/737)
+  [#746](https://github.com/gimli-rs/object/pull/746)
+
+* Changed `write::Object::add_subsection` to omit the subsection name suffix
+  if the subsection name is empty.
+  [#748](https://github.com/gimli-rs/object/pull/748)
+
+--------------------------------------------------------------------------------
+
+## 0.36.5
+
+Released 2024/10/04.
+
+### Added
+
+* Added `Architecture::E2K32` and `Architecture::E2K64`.
+  [#727](https://github.com/gimli-rs/object/pull/727)
+
+* Added read and write support for `pe::IMAGE_REL_ARM64_BRANCH26`.
+  [#731](https://github.com/gimli-rs/object/pull/731)
+
+### Changed
+
+* Fixed decompression of multi-frame Zstandard data in `read::CompressedData::decompress`.
+  [#730](https://github.com/gimli-rs/object/pull/730)
+
+--------------------------------------------------------------------------------
+
+## 0.36.4
+
+Released 2024/08/30.
+
+### Added
+
+* Added `pe::IMAGE_FILE_MACHINE_ARM64X` and `pe::IMAGE_FILE_MACHINE_CHPE_X86`.
+  [#717](https://github.com/gimli-rs/object/pull/717)
+
+* Added `elf::SHF_GNU_RETAIN` and `elf::SHF_GNU_MBIND`.
+  [#720](https://github.com/gimli-rs/object/pull/720)
+
+### Changed
+
+* Fixed the checksum for COFF BSS section symbols in `write::Object`.
+  [#718](https://github.com/gimli-rs/object/pull/718)
+
+* Changed `read::CompressedData::decompress` to validate the decompressed size.
+  [#723](https://github.com/gimli-rs/object/pull/723)
+
+* Updated `wasmparser` dependency.
+
+--------------------------------------------------------------------------------
+
+## 0.36.3
+
+Released 2024/08/07.
+
+### Added
+
+* Added `Iterator` implementations for various types in the low level read API.
+  [#713](https://github.com/gimli-rs/object/pull/713)
+  [#714](https://github.com/gimli-rs/object/pull/714)
+
+### Changed
+
+* Changed `from_bytes` constructors for integer endian types to `const`.
+  [#712](https://github.com/gimli-rs/object/pull/712)
+
+* Changed `next` methods in the low level read API to fuse after returning an
+  error.
+  [#714](https://github.com/gimli-rs/object/pull/714)
+
+* Updated `wasmparser` dependency.
+  [#715](https://github.com/gimli-rs/object/pull/715)
+
+--------------------------------------------------------------------------------
+
+## 0.36.2
+
+Released 2024/07/24.
+
+### Changed
+
+* Improved writing of GNU symbol versioning in `build::elf::Builder`.
+  [#705](https://github.com/gimli-rs/object/pull/705)
+
+* Fixed alignment of `SHT_HASH`/`SHT_GNU_verdef`/`SHT_GNU_verneed` sections in
+  `write::elf::Writer`.
+  [#706](https://github.com/gimli-rs/object/pull/706)
+
+* Fixed writing of GNU hash for absolute symbols in `build::elf::Builder`.
+  [#707](https://github.com/gimli-rs/object/pull/707)
+
+* Fixed writing of empty ELF string table in `write::Object`.
+  [#710](https://github.com/gimli-rs/object/pull/710)
+
+--------------------------------------------------------------------------------
+
+## 0.36.1
+
+Released 2024/06/29.
+
+### Added
+
+* Added `SectionKind::DebugString`.
+  [#694](https://github.com/gimli-rs/object/pull/694)
+
+* Added `Architecture::Sparc` and `Architecture::Sparc32Plus`.
+  [#699](https://github.com/gimli-rs/object/pull/699)
+  [#700](https://github.com/gimli-rs/object/pull/700)
+
+* Added more RISC-V ELF relocation constants.
+  [#701](https://github.com/gimli-rs/object/pull/701)
+
+### Changed
+
+* Changed `read::ElfFile::imports` to return the library for versioned symbols.
+  [#693](https://github.com/gimli-rs/object/pull/693)
+
+* Changed `read::MachOFile` to support Go's debug section compression.
+  [#697](https://github.com/gimli-rs/object/pull/697)
+
+* Reversed the order of Mach-O relocations emitted by `write::Object`.
+  [#702](https://github.com/gimli-rs/object/pull/702)
+
+--------------------------------------------------------------------------------
+
 ## 0.36.0
 
 Released 2024/05/26.

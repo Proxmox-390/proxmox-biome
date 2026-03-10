@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.76"
 name = "trybuild"
-version = "1.0.105"
+version = "1.0.114"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
 build = false
 exclude = [
@@ -38,13 +38,14 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/dtolnay/trybuild"
 
 [package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
 rustdoc-args = [
     "--generate-link-to-definition",
+    "--generate-macro-expansion",
     "--extern-html-root-url=core=https://doc.rust-lang.org",
     "--extern-html-root-url=alloc=https://doc.rust-lang.org",
     "--extern-html-root-url=std=https://doc.rust-lang.org",
 ]
-targets = ["x86_64-unknown-linux-gnu"]
 
 [features]
 diff = ["dep:dissimilar"]
@@ -74,13 +75,13 @@ version = "1.0.194"
 version = "1.0.110"
 
 [dependencies.target-triple]
-version = "0.1"
+version = "1.0"
 
 [dependencies.termcolor]
 version = "1.0.4"
 
 [dependencies.toml]
-version = "0.8"
+version = "0.9"
 
 [dev-dependencies.automod]
 version = "1.0.10"

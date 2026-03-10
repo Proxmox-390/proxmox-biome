@@ -61,6 +61,9 @@ normalizations! {
     UnindentAfterHelp,
     AndOthersVerbose,
     UnindentMultilineNote,
+    DependencyVersion,
+    HeadingNote,
+    UnindentSuggestion,
     // New normalization steps are to be inserted here at the end so that any
     // snapshots saved before your normalization change remain passing.
 }
@@ -313,6 +316,20 @@ impl<'a> Filter<'a> {
                         // --> $CARGO/serde_json-1.0.64/src/de.rs:2584:8
                         line.replace_range(indent + 4..hash_end, "$CARGO");
                         other_crate = true;
+                        if self.normalization >= DependencyVersion {
+                            let rest = &line[indent + 11..];
+                            let end_of_version = rest.find('/');
+                            if let Some(end_of_crate_name) = end_of_version
+                                .and_then(|end| rest[..end].find('.'))
+                                .and_then(|end| rest[..end].rfind('-'))
+                            {
+                                line.replace_range(
+                                    indent + end_of_crate_name + 12
+                                        ..indent + end_of_version.unwrap() + 11,
+                                    "$VERSION",
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -457,7 +474,10 @@ fn is_ascii_lowercase_hex(s: &str) -> bool {
 
 // "10 | T: Send,"  ->  "   | T: Send,"
 fn hide_leading_numbers(line: &mut String) {
-    let n = line.bytes().take_while(u8::is_ascii_digit).count();
+    let n = line
+        .bytes()
+        .take_while(|b: &u8| *b == b' ' || b.is_ascii_digit())
+        .count();
     for i in 0..n {
         line.replace_range(i..i + 1, " ");
     }
@@ -544,7 +564,7 @@ fn unindent(diag: String, normalization: Normalization) -> String {
         normalized.push_str(line);
         normalized.push('\n');
 
-        if indented_line_kind(line, &mut false, normalization) != IndentedLineKind::Heading {
+        if indented_line_kind(line, true, &mut false, normalization) != IndentedLineKind::Heading {
             continue;
         }
 
@@ -554,14 +574,15 @@ fn unindent(diag: String, normalization: Normalization) -> String {
         };
 
         if let IndentedLineKind::Code(indent) =
-            indented_line_kind(next_line, &mut false, normalization)
+            indented_line_kind(next_line, false, &mut false, normalization)
         {
             if next_line[indent + 1..].starts_with("--> ") {
                 let mut lines_in_block = 1;
                 let mut least_indent = indent;
                 let mut previous_line_is_note = false;
                 while let Some(line) = ahead.next() {
-                    match indented_line_kind(line, &mut previous_line_is_note, normalization) {
+                    match indented_line_kind(line, false, &mut previous_line_is_note, normalization)
+                    {
                         IndentedLineKind::Heading => break,
                         IndentedLineKind::Code(indent) => {
                             lines_in_block += 1;
@@ -581,7 +602,7 @@ fn unindent(diag: String, normalization: Normalization) -> String {
                 for _ in 0..lines_in_block {
                     let line = lines.next().unwrap();
                     if let IndentedLineKind::Code(_) | IndentedLineKind::Other(_) =
-                        indented_line_kind(line, &mut previous_line_is_note, normalization)
+                        indented_line_kind(line, false, &mut previous_line_is_note, normalization)
                     {
                         let space = line.find(' ').unwrap();
                         normalized.push_str(&line[..space]);
@@ -600,6 +621,7 @@ fn unindent(diag: String, normalization: Normalization) -> String {
 
 fn indented_line_kind(
     line: &str,
+    first_line_in_block: bool,
     previous_line_is_note: &mut bool,
     normalization: Normalization,
 ) -> IndentedLineKind {
@@ -615,6 +637,10 @@ fn indented_line_kind(
         if line[heading_len..].starts_with(&[':', '['][..]) {
             return IndentedLineKind::Heading;
         }
+    }
+
+    if first_line_in_block && normalization >= HeadingNote && line.starts_with("note: ") {
+        return IndentedLineKind::Heading;
     }
 
     if line.starts_with("note:")
@@ -634,12 +660,24 @@ fn indented_line_kind(
         return IndentedLineKind::Code(spaces);
     }
 
-    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
-    let spaces = line[digits..].bytes().take_while(|b| *b == b' ').count();
+    let mut spaces = line.bytes().take_while(is_space).count();
+    let digits = line[spaces..]
+        .bytes()
+        .take_while(u8::is_ascii_digit)
+        .count();
+    spaces += line[spaces + digits..].bytes().take_while(is_space).count();
     let rest = &line[digits + spaces..];
     if spaces > 0
         && (rest == "|"
             || rest.starts_with("| ")
+            || normalization >= UnindentSuggestion
+                && digits > 0
+                && (rest == "~"
+                    || rest.starts_with("~ ")
+                    || rest == "+"
+                    || rest.starts_with("+ ")
+                    || rest == "-"
+                    || rest.starts_with("- "))
             || digits == 0
                 && (rest.starts_with("--> ") || rest.starts_with("::: ") || rest.starts_with("= ")))
     {

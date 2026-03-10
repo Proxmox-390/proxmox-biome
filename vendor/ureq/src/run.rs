@@ -52,7 +52,7 @@ pub(crate) fn run(
     let mut call = Call::new(request)?;
 
     if force_send_body {
-        call.send_body_despite_method();
+        call.force_send_body();
     }
 
     call.allow_non_standard_methods(config.allow_non_standard_methods());
@@ -251,7 +251,7 @@ fn add_headers(
     call: &mut Call<Prepare>,
     agent: &Agent,
     config: &Config,
-    body: &SendBody,
+    body: &mut SendBody,
     uri: &Uri,
 ) -> Result<(), Error> {
     let headers = call.headers();
@@ -259,7 +259,7 @@ fn add_headers(
     let send_body_mode = if headers.has_send_body_mode() {
         None
     } else {
-        Some(body.body_mode())
+        Some(body.body_mode()?)
     };
     let has_header_accept_enc = headers.has_accept_encoding();
     let has_header_ua = headers.has_user_agent();
@@ -351,9 +351,22 @@ fn connect(
     // cannot make requests with partial uri like "/path".
     uri.ensure_valid_url()?;
 
-    let addrs = agent
-        .resolver
-        .resolve(uri, config, timings.next_timeout(Timeout::Resolve))?;
+    let is_proxy = config.proxy().is_some();
+
+    // For most proxy configs, the proxy itself should resolve the host name we are connecting to.
+    // However for SOCKS4, we must do it and pass the resolved IP to the proxy.
+    let is_proxy_local_resolve = config.proxy().map(|p| p.resolve_target()).unwrap_or(false);
+
+    // Tells if this host matches NO_PROXY
+    let is_no_proxy = config.proxy().map(|p| p.is_no_proxy(uri)).unwrap_or(false);
+
+    let addrs = if is_no_proxy || !is_proxy || is_proxy_local_resolve {
+        agent
+            .resolver
+            .resolve(uri, config, timings.next_timeout(Timeout::Resolve))?
+    } else {
+        agent.resolver.empty()
+    };
 
     timings.record_time(Timeout::Resolve);
 
@@ -421,7 +434,7 @@ fn await_100(
             Ok(_) => {
                 let input = connection.buffers().input();
                 if input.is_empty() {
-                    return Err(Error::disconnected());
+                    return Err(Error::disconnected("await_100 empty input"));
                 }
 
                 let amount = call.try_read_100(input)?;
@@ -549,7 +562,7 @@ fn recv_response(
             assert!(call.can_proceed());
             break response;
         } else if !made_progress {
-            return Err(Error::disconnected());
+            return Err(Error::disconnected("recv_respone made no progress"));
         }
     };
 
@@ -683,18 +696,33 @@ impl BodyHandler {
 
         let call = self.call.take().expect("ended() called with body");
 
+        // In some cases, when reading chunked, the server send 0\r\n to indicate
+        // the end of the body, and then abruptly does a FIN. In these cases we have
+        // received the entire body, but must clean up the connection.
+        let is_ended_chunked = call.is_ended_chunked();
+
+        let mut force_close = false;
+
         if !call.can_proceed() {
-            return Err(Error::disconnected());
+            if is_ended_chunked {
+                // This case means we got 0\r\n, but can_proceed() is false because
+                // it only goes true on fully received chunked bodies.
+                debug!("Server ended connection after sending chunked 0\\r\\n");
+                force_close = true;
+            } else {
+                return Err(Error::disconnected("ended call cannot proceed"));
+            }
         }
 
-        let must_close_connection = match call.proceed().unwrap() {
-            RecvBodyResult::Redirect(call) => {
-                let c = call.must_close_connection();
-                self.redirect = Some(Box::new(call));
-                c
-            }
-            RecvBodyResult::Cleanup(v) => v.must_close_connection(),
-        };
+        let must_close_connection = force_close
+            || match call.proceed().unwrap() {
+                RecvBodyResult::Redirect(call) => {
+                    let c = call.must_close_connection();
+                    self.redirect = Some(Box::new(call));
+                    c
+                }
+                RecvBodyResult::Cleanup(v) => v.must_close_connection(),
+            };
 
         let connection = self.connection.take().expect("ended() called with body");
         cleanup(connection, must_close_connection, self.timings.now());

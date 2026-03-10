@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 name = "ascii_table"
-version = "4.0.7"
+version = "4.0.8"
 authors = ["Gerrit Viljoen <red.striker@proton.me>"]
 build = false
 autolib = false
@@ -40,9 +40,9 @@ allowlist = [
 ]
 
 [features]
-auto_table_width = ["termsize"]
-color_codes = ["regex"]
-wide_characters = ["unicode-width"]
+auto_table_width = ["dep:termize"]
+color_codes = ["dep:regex"]
+wide_characters = ["dep:unicode-width"]
 
 [lib]
 name = "ascii_table"
@@ -56,8 +56,8 @@ path = "tests/mod.rs"
 version = "1"
 optional = true
 
-[dependencies.termsize]
-version = "0.1"
+[dependencies.termize]
+version = "0.2"
 optional = true
 
 [dependencies.unicode-width]

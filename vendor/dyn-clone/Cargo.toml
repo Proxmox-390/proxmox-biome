@@ -11,17 +11,24 @@
 
 [package]
 edition = "2018"
-rust-version = "1.45"
+rust-version = "1.60"
 name = "dyn-clone"
-version = "1.0.11"
+version = "1.0.20"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
-description = "Clone trait that is object-safe"
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "Clone trait that is dyn-compatible"
 documentation = "https://docs.rs/dyn-clone"
 readme = "README.md"
 keywords = [
     "dyn",
     "clone",
     "trait-object",
+    "object-safe",
 ]
 categories = [
     "rust-patterns",
@@ -32,9 +39,32 @@ repository = "https://github.com/dtolnay/dyn-clone"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
+rustdoc-args = [
+    "--generate-link-to-definition",
+    "--extern-html-root-url=core=https://doc.rust-lang.org",
+    "--extern-html-root-url=alloc=https://doc.rust-lang.org",
+    "--extern-html-root-url=std=https://doc.rust-lang.org",
+]
 
 [lib]
-doc-scrape-examples = false
+name = "dyn_clone"
+path = "src/lib.rs"
+
+[[example]]
+name = "readme"
+path = "examples/readme.rs"
+
+[[test]]
+name = "compiletest"
+path = "tests/compiletest.rs"
+
+[[test]]
+name = "macros"
+path = "tests/macros.rs"
+
+[[test]]
+name = "trait"
+path = "tests/trait.rs"
 
 [dev-dependencies.rustversion]
 version = "1.0"

@@ -16,13 +16,12 @@ use array::ArrayDeserializer;
 use datetime::DatetimeDeserializer;
 use key::KeyDeserializer;
 use spanned::SpannedDeserializer;
-use table::TableMapAccess;
 use table_enum::TableEnumDeserializer;
 
 pub use value::ValueDeserializer;
 
 /// Errors that can occur when deserializing a type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Error {
     inner: crate::TomlError,
 }
@@ -39,7 +38,7 @@ impl Error {
 
     /// Add key while unwinding
     pub fn add_key(&mut self, key: String) {
-        self.inner.add_key(key)
+        self.inner.add_key(key);
     }
 
     /// What went wrong
@@ -67,7 +66,13 @@ impl serde::de::Error for Error {
 }
 
 impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.inner.fmt(f)
     }
 }
@@ -106,7 +111,7 @@ where
     from_str(s)
 }
 
-/// Convert a [DocumentMut][crate::DocumentMut] into `T`.
+/// Convert a [`DocumentMut`][crate::DocumentMut] into `T`.
 pub fn from_document<T>(d: impl Into<Deserializer>) -> Result<T, Error>
 where
     T: DeserializeOwned,
@@ -264,7 +269,7 @@ impl<'de, S: Into<String>> serde::Deserializer<'de> for Deserializer<S> {
     }
 }
 
-impl<'de> serde::de::IntoDeserializer<'de, crate::de::Error> for Deserializer {
+impl serde::de::IntoDeserializer<'_, Error> for Deserializer {
     type Deserializer = Deserializer;
 
     fn into_deserializer(self) -> Self::Deserializer {
@@ -272,7 +277,7 @@ impl<'de> serde::de::IntoDeserializer<'de, crate::de::Error> for Deserializer {
     }
 }
 
-impl<'de> serde::de::IntoDeserializer<'de, crate::de::Error> for crate::DocumentMut {
+impl serde::de::IntoDeserializer<'_, Error> for crate::DocumentMut {
     type Deserializer = Deserializer;
 
     fn into_deserializer(self) -> Self::Deserializer {
@@ -280,7 +285,7 @@ impl<'de> serde::de::IntoDeserializer<'de, crate::de::Error> for crate::Document
     }
 }
 
-impl<'de> serde::de::IntoDeserializer<'de, crate::de::Error> for crate::ImDocument<String> {
+impl serde::de::IntoDeserializer<'_, Error> for crate::ImDocument<String> {
     type Deserializer = Deserializer;
 
     fn into_deserializer(self) -> Self::Deserializer {
@@ -293,10 +298,10 @@ pub(crate) fn validate_struct_keys(
     fields: &'static [&'static str],
 ) -> Result<(), Error> {
     let extra_fields = table
-        .iter()
-        .filter_map(|(key, val)| {
-            if !fields.contains(&key.as_str()) {
-                Some(val.clone())
+        .keys()
+        .filter_map(|key| {
+            if !fields.contains(&key.get()) {
+                Some(key.clone())
             } else {
                 None
             }
@@ -311,12 +316,12 @@ pub(crate) fn validate_struct_keys(
                 "unexpected keys in table: {}, available keys: {}",
                 extra_fields
                     .iter()
-                    .map(|k| k.key.get())
+                    .map(|k| k.get())
                     .collect::<Vec<_>>()
                     .join(", "),
                 fields.join(", "),
             ),
-            extra_fields[0].key.span(),
+            extra_fields[0].span(),
         ))
     }
 }

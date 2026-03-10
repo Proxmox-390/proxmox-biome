@@ -1,86 +1,37 @@
-use syn::Attribute;
+use proc_macro2::TokenStream;
+use quote::ToTokens;
+use syn::{Attribute, Expr, ExprLit, Lit};
 
-pub fn get_title_and_desc_from_doc(attrs: &[Attribute]) -> (Option<String>, Option<String>) {
-    let doc = match get_doc(attrs) {
-        None => return (None, None),
-        Some(doc) => doc,
-    };
+pub fn get_doc(attrs: &[Attribute]) -> Option<Expr> {
+    let mut macro_args: TokenStream = TokenStream::new();
 
-    if doc.starts_with('#') {
-        let mut split = doc.splitn(2, '\n');
-        let title = split
-            .next()
-            .unwrap()
-            .trim_start_matches('#')
-            .trim()
-            .to_owned();
-        let maybe_desc = split.next().and_then(merge_description_lines);
-        (none_if_empty(title), maybe_desc)
-    } else {
-        (None, merge_description_lines(&doc))
-    }
-}
-
-fn merge_description_lines(doc: &str) -> Option<String> {
-    let desc = doc
-        .trim()
-        .split("\n\n")
-        .filter_map(|line| none_if_empty(line.trim().replace('\n', " ")))
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    none_if_empty(desc)
-}
-
-fn get_doc(attrs: &[Attribute]) -> Option<String> {
-    let attrs = attrs
+    for (i, line) in attrs
         .iter()
-        .filter_map(|attr| {
-            if !attr.path().is_ident("doc") {
-                return None;
+        .filter(|a| a.path().is_ident("doc"))
+        .flat_map(|a| a.meta.require_name_value())
+        .enumerate()
+    {
+        if i > 0 {
+            macro_args.extend([quote!(, "\n",)]);
+        }
+
+        if let Expr::Lit(ExprLit {
+            lit: Lit::Str(lit_str),
+            ..
+        }) = &line.value
+        {
+            if let Some(trimmed) = lit_str.value().strip_prefix(' ') {
+                trimmed.to_tokens(&mut macro_args);
+                continue;
             }
+        }
 
-            let meta = attr.meta.require_name_value().ok()?;
-            if let syn::Expr::Lit(syn::ExprLit {
-                lit: syn::Lit::Str(lit_str),
-                ..
-            }) = &meta.value
-            {
-                return Some(lit_str.value());
-            }
-
-            None
-        })
-        .collect::<Vec<_>>();
-
-    let mut lines = attrs
-        .iter()
-        .flat_map(|a| a.split('\n'))
-        .map(str::trim)
-        .skip_while(|s| s.is_empty())
-        .collect::<Vec<_>>();
-
-    if let Some(&"") = lines.last() {
-        lines.pop();
+        line.value.to_tokens(&mut macro_args);
     }
 
-    // Added for backward-compatibility, but perhaps we shouldn't do this
-    // https://github.com/rust-lang/rust/issues/32088
-    if lines.iter().all(|l| l.starts_with('*')) {
-        for line in lines.iter_mut() {
-            *line = line[1..].trim()
-        }
-        while let Some(&"") = lines.first() {
-            lines.remove(0);
-        }
-    };
-
-    none_if_empty(lines.join("\n"))
-}
-
-fn none_if_empty(s: String) -> Option<String> {
-    if s.is_empty() {
+    if macro_args.is_empty() {
         None
     } else {
-        Some(s)
+        Some(parse_quote!(::core::concat!(#macro_args)))
     }
 }

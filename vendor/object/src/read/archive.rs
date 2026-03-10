@@ -630,7 +630,7 @@ enum SymbolIteratorInternal<'data> {
     /// Contains:
     /// - the size in bytes of the offsets array as a 32-bit little-endian integer
     /// - the offsets array, for which each entry is a pair of 32-bit little-endian integers
-    /// for the offset of the member header and the offset of the symbol name
+    ///   for the offset of the member header and the offset of the symbol name
     /// - the size in bytes of the symbol names as a 32-bit little-endian integer
     /// - the symbol names as null-terminated strings
     Bsd {
@@ -642,7 +642,7 @@ enum SymbolIteratorInternal<'data> {
     /// Contains:
     /// - the size in bytes of the offsets array as a 64-bit little-endian integer
     /// - the offsets array, for which each entry is a pair of 64-bit little-endian integers
-    /// for the offset of the member header and the offset of the symbol name
+    ///   for the offset of the member header and the offset of the symbol name
     /// - the size in bytes of the symbol names as a 64-bit little-endian integer
     /// - the symbol names as null-terminated strings
     Bsd64 {
@@ -799,6 +799,20 @@ impl<'data> Iterator for ArchiveSymbolIterator<'data> {
                         offset: ArchiveOffset(member.get(LE).into()),
                     })
                 }))
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match &self.0 {
+            SymbolIteratorInternal::None => (0, None),
+            SymbolIteratorInternal::Gnu { offsets, .. } => offsets.size_hint(),
+            SymbolIteratorInternal::Gnu64 { offsets, .. } => offsets.size_hint(),
+            SymbolIteratorInternal::Bsd { offsets, .. } => offsets.size_hint(),
+            SymbolIteratorInternal::Bsd64 { offsets, .. } => offsets.size_hint(),
+            SymbolIteratorInternal::Coff { indices, .. } => {
+                // The `slice::Iter` is in the indices field for this variant
+                indices.size_hint()
             }
         }
     }

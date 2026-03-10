@@ -1,5 +1,32 @@
 # `bytemuck` changelog
 
+## 1.24
+
+* [use new stable avx512 types from rust 1.89](https://github.com/Lokathor/bytemuck/pull/322)
+* [impl AnyBitPattern for [MaybeUninit<T: AnyBitPattern>; N]](https://github.com/Lokathor/bytemuck/pull/317)
+* bump `derive` minimum version.
+
+## 1.23.2
+
+* bump `derive` minimum version.
+
+## 1.23.1
+
+* Added a windows-only `ZeroableInOption` impl for "stdcall" functions.
+
+## 1.23
+
+* `impl_core_error` crate feature adds `core::error::Error` impl.
+* More `ZeroableInOption` impls.
+
+## 1.22
+
+* Add the `pod_saturating` feature, which adds `Pod` impls for `Saturating<T>`
+  when `T` is already `Pod`.
+* A bump in the minimum `bytemuck_derive` dependency from 1.4.0 to 1.4.1 to
+  avoid a bug if you have a truly ancient `cargo.lock` file sitting around.
+* Adds `Send` and `Sync` impls to `BoxBytes`.
+
 ## 1.21
 
 * Implement `Pod` and `Zeroable` for `core::arch::{x86, x86_64}::__m512`, `__m512d` and `__m512i` without nightly.

@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.77"
 name = "notify"
-version = "8.0.0"
+version = "8.2.0"
 authors = [
     "Félix Saparelli <me@passcod.name>",
     "Daniel Faust <hessijames@gmail.com>",
@@ -37,8 +37,9 @@ repository = "https://github.com/notify-rs/notify.git"
 version = "0.5.0"
 optional = true
 
-[dependencies.filetime]
-version = "0.2.22"
+[dependencies.flume]
+version = "0.11.1"
+optional = true
 
 [dependencies.libc]
 version = "0.2.4"
@@ -75,7 +76,7 @@ serde = ["notify-types/serde"]
 serialization-compat-6 = ["notify-types/serialization-compat-6"]
 
 [target."cfg(any(target_os=\"freebsd\", target_os=\"openbsd\", target_os = \"netbsd\", target_os = \"dragonflybsd\", target_os = \"ios\"))".dependencies.kqueue]
-version = "1.0.8"
+version = "1.1.1"
 
 [target."cfg(any(target_os=\"freebsd\", target_os=\"openbsd\", target_os = \"netbsd\", target_os = \"dragonflybsd\", target_os = \"ios\"))".dependencies.mio]
 version = "1.0"
@@ -89,6 +90,9 @@ default-features = false
 version = "1.0"
 features = ["os-ext"]
 
+[target."cfg(target_os = \"windows\")".dev-dependencies.trash]
+version = "5.2.2"
+
 [target."cfg(target_os=\"macos\")".dependencies.bitflags]
 version = "2.7.0"
 
@@ -97,7 +101,7 @@ version = "4.0.0"
 optional = true
 
 [target."cfg(target_os=\"macos\")".dependencies.kqueue]
-version = "1.0.8"
+version = "1.1.1"
 optional = true
 
 [target."cfg(target_os=\"macos\")".dependencies.mio]
@@ -106,7 +110,7 @@ features = ["os-ext"]
 optional = true
 
 [target."cfg(windows)".dependencies.windows-sys]
-version = "0.59.0"
+version = "0.60.1"
 features = [
     "Win32_System_Threading",
     "Win32_Foundation",

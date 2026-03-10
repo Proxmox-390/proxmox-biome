@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.74"
 name = "codspeed-criterion-compat"
-version = "2.10.1"
+version = "3.0.5"
 authors = ["Arthur Pastel <arthur@codspeed.io>"]
 build = "build.rs"
 autolib = false
@@ -23,7 +23,7 @@ autotests = false
 autobenches = false
 description = "Criterion.rs compatibility layer for CodSpeed"
 homepage = "https://codspeed.io"
-documentation = "https://docs.codspeed.io"
+documentation = "https://codspeed.io/docs/reference/codspeed-rust/criterion"
 readme = "README.md"
 keywords = [
     "codspeed",
@@ -37,56 +37,6 @@ categories = [
 ]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/CodSpeedHQ/codspeed-rust"
-
-[lib]
-name = "codspeed_criterion_compat"
-path = "src/lib.rs"
-
-[[bench]]
-name = "criterion_example"
-path = "benches/criterion_example.rs"
-harness = false
-
-[[bench]]
-name = "criterion_integration_main"
-path = "benches/criterion_integration_main.rs"
-harness = false
-
-[[bench]]
-name = "test_benches"
-path = "benches/test_benches.rs"
-harness = false
-
-[dependencies.async-std]
-version = "1.12"
-optional = true
-
-[dependencies.codspeed]
-version = "=2.10.1"
-
-[dependencies.colored]
-version = "2.1.0"
-
-[dependencies.criterion]
-version = "=2.10.1"
-default-features = false
-package = "codspeed-criterion-compat-walltime"
-
-[dependencies.futures]
-version = "0.3"
-optional = true
-default-features = false
-
-[dependencies.smol]
-version = "2.0"
-optional = true
-default-features = false
-
-[dependencies.tokio]
-version = "1.39"
-features = ["rt"]
-optional = true
-default-features = false
 
 [features]
 async = [
@@ -123,3 +73,53 @@ default = [
 html_reports = ["criterion/html_reports"]
 plotters = ["criterion/plotters"]
 rayon = ["criterion/rayon"]
+
+[lib]
+name = "codspeed_criterion_compat"
+path = "src/lib.rs"
+
+[[bench]]
+name = "criterion_example"
+path = "benches/criterion_example.rs"
+harness = false
+
+[[bench]]
+name = "criterion_integration_main"
+path = "benches/criterion_integration_main.rs"
+harness = false
+
+[[bench]]
+name = "test_benches"
+path = "benches/test_benches.rs"
+harness = false
+
+[dependencies.async-std]
+version = "1.12"
+optional = true
+
+[dependencies.codspeed]
+version = "=3.0.5"
+
+[dependencies.colored]
+version = "2.1.0"
+
+[dependencies.criterion]
+version = "=3.0.5"
+default-features = false
+package = "codspeed-criterion-compat-walltime"
+
+[dependencies.futures]
+version = "0.3"
+optional = true
+default-features = false
+
+[dependencies.smol]
+version = "2.0"
+optional = true
+default-features = false
+
+[dependencies.tokio]
+version = "1.39"
+features = ["rt"]
+optional = true
+default-features = false

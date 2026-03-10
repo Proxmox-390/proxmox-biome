@@ -155,6 +155,7 @@
 //!   (e.g.  `Content-Type: text/plain; charset=iso-8859-1`). Without this, the
 //!   library defaults to Rust's built in `utf-8`
 //! * **json** enables JSON sending and receiving via serde_json
+//! * **multipart** enables multipart/form-data sending via [`unversioned::multipart`]
 //!
 //! ### Unstable
 //!
@@ -386,6 +387,15 @@
 //!
 //! Proxies settings are configured on an [`Agent`]. All request sent through the agent will be proxied.
 //!
+//! ## Environment Variables
+//!
+//! ureq automatically reads proxy configuration from environment variables when creating
+//! a default [`Agent`]. Proxy variables are checked in order: `ALL_PROXY`, `HTTPS_PROXY`,
+//! then `HTTP_PROXY` (with lowercase variants).
+//!
+//! `NO_PROXY` specifies hosts that bypass the proxy, supporting exact hosts, wildcard
+//! suffixes (`*.example.com`), dot suffixes (`.example.com`), and match-all (`*`).
+//!
 //! ## Example using HTTP
 //!
 //! ```rust
@@ -482,34 +492,40 @@
 //! [rustls-platform-verifier]: https://crates.io/crates/rustls-platform-verifier
 //! [webpki-roots]: https://crates.io/crates/webpki-roots
 //! [`Arc`]: https://doc.rust-lang.org/std/sync/struct.Arc.html
-//! [`Agent`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Agent.html
-//! [`Error`]: https://docs.rs/ureq/3.0.0-rc4/ureq/enum.Error.html
-//! [`http_status_as_error()`]: https://docs.rs/ureq/3.0.0-rc4/ureq/config/struct.ConfigBuilder.html#method.http_status_as_error
+//! [`Agent`]: https://docs.rs/ureq/latest/ureq/struct.Agent.html
+//! [`Error`]: https://docs.rs/ureq/latest/ureq/enum.Error.html
+//! [`http_status_as_error()`]: https://docs.rs/ureq/latest/ureq/config/struct.ConfigBuilder.html#method.http_status_as_error
 //! [SCT]: https://en.wikipedia.org/wiki/Certificate_Transparency
 //! [CRL]: https://en.wikipedia.org/wiki/Certificate_revocation_list
-//! [PR818]: https://github.com/algesten/ureq/pull/818
-//! [`request.send_json()`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.RequestBuilder.html#method.send_json
-//! [`body.read_json()`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html#method.read_json
-//! [`AsSendBody`]: https://docs.rs/ureq/3.0.0-rc4/ureq/trait.AsSendBody.html
-//! [`SendBody::from_json()`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.SendBody.html#method.from_json
+//! [PR 818]: https://github.com/algesten/ureq/pull/818
+//! [`request.send_json()`]: https://docs.rs/ureq/latest/ureq/struct.RequestBuilder.html#method.send_json
+//! [`body.read_json()`]: https://docs.rs/ureq/latest/ureq/struct.Body.html#method.read_json
+//! [`AsSendBody`]: https://docs.rs/ureq/latest/ureq/trait.AsSendBody.html
+//! [`SendBody::from_json()`]: https://docs.rs/ureq/latest/ureq/struct.SendBody.html#method.from_json
 //! [`std::io::Read`]: https://doc.rust-lang.org/std/io/trait.Read.html
-//! [`SendBody::from_reader()`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.SendBody.html#method.from_reader
-//! [`SendBody::from_owned_reader()`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.SendBody.html#method.from_owned_reader
-//! [`Body`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html
-//! [`request.send_form()`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.RequestBuilder.html#method.send_form
-//! [`Body::read_to_string()`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html#method.read_to_string
-//! [`Body::as_reader()`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html#method.as_reader
-//! [`Body::with_config()`]: https://docs.rs/ureq/3.0.0-rc4/ureq/struct.Body.html#method.with_config
-//! [`Transport`]: https://docs.rs/ureq/3.0.0-rc4/ureq/unversioned/transport/trait.Transport.html
-//! [`Resolver`]: https://docs.rs/ureq/3.0.0-rc4/ureq/unversioned/resolver/trait.Resolver.html
-//! [`unversioned`]: https://docs.rs/ureq/3.0.0-rc4/ureq/unversioned/index.html
+//! [`SendBody::from_reader()`]: https://docs.rs/ureq/latest/ureq/struct.SendBody.html#method.from_reader
+//! [`SendBody::from_owned_reader()`]: https://docs.rs/ureq/latest/ureq/struct.SendBody.html#method.from_owned_reader
+//! [`Body`]: https://docs.rs/ureq/latest/ureq/struct.Body.html
+//! [`request.send_form()`]: https://docs.rs/ureq/latest/ureq/struct.RequestBuilder.html#method.send_form
+//! [`Body::read_to_string()`]: https://docs.rs/ureq/latest/ureq/struct.Body.html#method.read_to_string
+//! [`Body::as_reader()`]: https://docs.rs/ureq/latest/ureq/struct.Body.html#method.as_reader
+//! [`Body::with_config()`]: https://docs.rs/ureq/latest/ureq/struct.Body.html#method.with_config
+//! [`Transport`]: https://docs.rs/ureq/latest/ureq/unversioned/transport/trait.Transport.html
+//! [`Resolver`]: https://docs.rs/ureq/latest/ureq/unversioned/resolver/trait.Resolver.html
+//! [`unversioned`]: https://docs.rs/ureq/latest/ureq/unversioned/index.html
 //! [`CryptoProvider`]: https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html
+//! [`unversioned::multipart`]: https://docs.rs/ureq/latest/ureq/unversioned/multipart/index.html
 
 #![forbid(unsafe_code)]
 #![warn(clippy::all)]
 #![deny(missing_docs)]
 // I don't think elided lifetimes help in understanding the code.
 #![allow(clippy::needless_lifetimes)]
+// Since you can't use inlined args for all cases, using it means the
+// code will have a mix of inlined and not inlined. Code should be
+// uniform, thus this lint is misguided.
+#![allow(clippy::uninlined_format_args)]
+#![allow(mismatched_lifetime_syntaxes)]
 
 #[macro_use]
 extern crate log;
@@ -522,7 +538,7 @@ pub use ureq_proto::http;
 pub use body::{Body, BodyBuilder, BodyReader, BodyWithConfig};
 use http::Method;
 use http::{Request, Response, Uri};
-pub use proxy::Proxy;
+pub use proxy::{Proxy, ProxyBuilder, ProxyProtocol};
 pub use request::RequestBuilder;
 use request::{WithBody, WithoutBody};
 pub use request_ext::RequestExt;
@@ -885,6 +901,13 @@ pub(crate) mod test {
     }
 
     #[test]
+    fn query_no_slash() {
+        init_test_log();
+        let mut res = get("http://httpbin.org?query=foo").call().unwrap();
+        res.body_mut().read_to_string().unwrap();
+    }
+
+    #[test]
     fn simple_head() {
         init_test_log();
         let mut res = head("http://httpbin.org/get").call().unwrap();
@@ -904,6 +927,56 @@ pub(crate) mod test {
         assert_eq!(txt, "You've been redirected");
         #[cfg(not(feature = "_test"))]
         assert_eq!(txt, "");
+    }
+
+    #[test]
+    fn test_send_form_content_type() {
+        init_test_log();
+
+        // These tests verify that the methods work correctly with the test infrastructure
+        // The actual Content-Type verification happens at the transport level
+        let form_data = [("key1", "value1"), ("key2", "value2")];
+        let mut res = post("http://httpbin.org/post")
+            .header("x-verify-content-type", "application/x-www-form-urlencoded")
+            .send_form(form_data)
+            .unwrap();
+
+        let _txt = res.body_mut().read_to_string().unwrap();
+    }
+
+    #[test]
+    #[cfg(feature = "json")]
+    fn test_send_json_content_type() {
+        use serde_json::json;
+
+        init_test_log();
+
+        let data = json!({"key": "value"});
+        let mut res = post("http://httpbin.org/post")
+            .header("x-verify-content-type", "application/json; charset=utf-8")
+            .send_json(&data)
+            .unwrap();
+
+        let _txt = res.body_mut().read_to_string().unwrap();
+    }
+
+    #[test]
+    #[cfg(feature = "multipart")]
+    fn test_send_multipart_content_type() {
+        use crate::unversioned::multipart::Form;
+
+        init_test_log();
+
+        let form = Form::new()
+            .text("field1", "value1")
+            .text("field2", "value2");
+
+        let mut res = post("http://httpbin.org/post")
+            .header("x-verify-content-type", "multipart/form-data")
+            .send(form)
+            .unwrap();
+
+        let _txt = res.body_mut().read_to_string().unwrap();
     }
 
     #[test]
@@ -1017,12 +1090,42 @@ pub(crate) mod test {
 
     #[test]
     fn post_big_body_chunked() {
+        init_test_log();
         // https://github.com/algesten/ureq/issues/879
         let mut data = io::Cursor::new(vec![42; 153_600]);
         post("http://httpbin.org/post")
             .content_type("application/octet-stream")
             .send(SendBody::from_reader(&mut data))
             .expect("to send correctly");
+    }
+
+    #[test]
+    #[cfg(not(feature = "_test"))]
+    fn post_array_body_sends_content_length() {
+        init_test_log();
+        let mut response = post("http://httpbin.org/post")
+            .content_type("application/octet-stream")
+            .send(vec![42; 123])
+            .expect("to send correctly");
+
+        let ret = response.body_mut().read_to_string().unwrap();
+        assert!(ret.contains("\"Content-Length\": \"123\""));
+    }
+
+    #[test]
+    #[cfg(not(feature = "_test"))]
+    fn post_file_sends_file_length() {
+        init_test_log();
+
+        let file = std::fs::File::open("LICENSE-MIT").unwrap();
+
+        let mut response = post("http://httpbin.org/post")
+            .content_type("application/octet-stream")
+            .send(file)
+            .expect("to send correctly");
+
+        let ret = response.body_mut().read_to_string().unwrap();
+        assert!(ret.contains("\"Content-Length\": \"1072\""));
     }
 
     #[test]
@@ -1127,15 +1230,16 @@ pub(crate) mod test {
             };
         }
 
-        ensure!(RequestBuilder<WithoutBody>, 400); // 288
+        ensure!(RequestBuilder<WithoutBody>, 400); // 304
         ensure!(Agent, 100); // 32
         ensure!(Config, 400); // 320
         ensure!(ConfigBuilder<AgentScope>, 400); // 320
-        ensure!(Response<Body>, 800); // 760
-        ensure!(Body, 700); // 648
+        ensure!(Response<Body>, 250); // 136
+        ensure!(Body, 50); // 24
     }
 
     #[test]
+    #[cfg(feature = "_test")]
     fn limit_max_response_header_size() {
         init_test_log();
         let err = get("http://httpbin.org/get")
@@ -1148,6 +1252,7 @@ pub(crate) mod test {
     }
 
     #[test]
+    #[cfg(feature = "_test")]
     fn propfind_with_body() {
         init_test_log();
 
@@ -1186,6 +1291,24 @@ pub(crate) mod test {
             .build();
 
         agent.run(req).unwrap();
+    }
+
+    #[test]
+    #[cfg(feature = "_test")]
+    fn chunk_abort() {
+        init_test_log();
+        let mut res = get("http://my-fine-server/1chunk-abort").call().unwrap();
+        let body = res.body_mut().read_to_string().unwrap();
+        assert_eq!(body, "OK");
+        let mut res = get("http://my-fine-server/2chunk-abort").call().unwrap();
+        let body = res.body_mut().read_to_string().unwrap();
+        assert_eq!(body, "OK");
+        let mut res = get("http://my-fine-server/3chunk-abort").call().unwrap();
+        let body = res.body_mut().read_to_string().unwrap();
+        assert_eq!(body, "OK");
+        let mut res = get("http://my-fine-server/4chunk-abort").call().unwrap();
+        let body = res.body_mut().read_to_string().unwrap();
+        assert_eq!(body, "OK");
     }
 
     // This doesn't need to run, just compile.

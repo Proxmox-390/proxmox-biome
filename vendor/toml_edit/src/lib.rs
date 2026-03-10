@@ -1,13 +1,8 @@
-#![deny(missing_docs)]
-// https://github.com/Marwes/combine/issues/172
-#![recursion_limit = "256"]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
-
 //! # `toml_edit`
 //!
 //! This crate allows you to parse and modify toml
 //! documents, while preserving comments, spaces *and
-//! relative order* or items.
+//! relative order* of items.
 //!
 //! If you also need the ease of a more traditional API, see the [`toml`] crate.
 //!
@@ -43,22 +38,26 @@
 //! By default, values are created with default formatting
 //! ```rust
 //! # #[cfg(feature = "display")] {
+//! # #[cfg(feature = "parse")] {
 //! let mut doc = toml_edit::DocumentMut::new();
 //! doc["foo"] = toml_edit::value("bar");
 //! let expected = r#"foo = "bar"
 //! "#;
 //! assert_eq!(doc.to_string(), expected);
 //! # }
+//! # }
 //! ```
 //!
 //! You can choose a custom TOML representation by parsing the value.
 //! ```rust
 //! # #[cfg(feature = "display")] {
+//! # #[cfg(feature = "parse")] {
 //! let mut doc = toml_edit::DocumentMut::new();
 //! doc["foo"] = "'bar'".parse::<toml_edit::Item>().unwrap();
 //! let expected = r#"foo = 'bar'
 //! "#;
 //! assert_eq!(doc.to_string(), expected);
+//! # }
 //! # }
 //! ```
 //!
@@ -69,6 +68,13 @@
 //! * Order of dotted keys, see [issue](https://github.com/toml-rs/toml/issues/163).
 //!
 //! [`toml`]: https://docs.rs/toml/latest/toml/
+
+// https://github.com/Marwes/combine/issues/172
+#![recursion_limit = "256"]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![warn(missing_docs)]
+#![warn(clippy::print_stderr)]
+#![warn(clippy::print_stdout)]
 
 mod array;
 mod array_of_tables;
@@ -131,7 +137,13 @@ pub(crate) mod private {
     impl Sealed for f64 {}
     impl Sealed for bool {}
     impl Sealed for crate::Datetime {}
-    impl<'a, T: ?Sized> Sealed for &'a T where T: Sealed {}
+    impl<T: ?Sized> Sealed for &T where T: Sealed {}
     impl Sealed for crate::Table {}
     impl Sealed for crate::InlineTable {}
 }
+
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+#[cfg(feature = "display")]
+#[cfg(feature = "parse")]
+pub struct ReadmeDoctests;

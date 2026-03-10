@@ -13,9 +13,10 @@
 edition = "2021"
 rust-version = "1.63.0"
 name = "cookie_store"
-version = "0.21.1"
+version = "0.22.0"
 authors = ["Patrick Fernie <patrick.fernie@gmail.com>"]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -43,6 +44,28 @@ rustdoc-args = [
     "docsrs",
 ]
 
+[features]
+default = [
+    "public_suffix",
+    "serde_json",
+]
+log_secure_cookie_values = []
+preserve_order = ["dep:indexmap"]
+public_suffix = ["dep:publicsuffix"]
+serde = [
+    "dep:serde",
+    "dep:serde_derive",
+]
+serde_json = [
+    "serde",
+    "dep:serde_json",
+]
+serde_ron = [
+    "serde",
+    "dep:ron",
+]
+wasm-bindgen = ["time/wasm-bindgen"]
+
 [lib]
 name = "cookie_store"
 path = "src/lib.rs"
@@ -69,7 +92,7 @@ version = "2.2.3"
 optional = true
 
 [dependencies.ron]
-version = "0.8.1"
+version = "0.10.1"
 optional = true
 
 [dependencies.serde]
@@ -89,25 +112,3 @@ version = "0.3.16"
 
 [dependencies.url]
 version = "2.3.1"
-
-[features]
-default = [
-    "public_suffix",
-    "serde_json",
-]
-log_secure_cookie_values = []
-preserve_order = ["dep:indexmap"]
-public_suffix = ["dep:publicsuffix"]
-serde = [
-    "dep:serde",
-    "dep:serde_derive",
-]
-serde_json = [
-    "serde",
-    "dep:serde_json",
-]
-serde_ron = [
-    "serde",
-    "dep:ron",
-]
-wasm-bindgen = ["time/wasm-bindgen"]

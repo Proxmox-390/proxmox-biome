@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "git2"
-version = "0.20.2"
+version = "0.20.4"
 authors = [
     "Josh Triplett <josh@joshtriplett.org>",
     "Alex Crichton <alex@alexcrichton.com>",
@@ -137,7 +137,7 @@ version = "2.1.0"
 version = "0.2"
 
 [dependencies.libgit2-sys]
-version = "0.18.1"
+version = "0.18.3"
 
 [dependencies.log]
 version = "0.4.8"

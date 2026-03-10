@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use toml_datetime::*;
+use toml_datetime::Datetime;
 
 use crate::array_of_tables::ArrayOfTables;
 use crate::table::TableLike;
@@ -21,11 +21,11 @@ pub enum Item {
 }
 
 impl Item {
-    /// Sets `self` to the given item iff `self` is none and
+    /// Sets `self` to the given item if `self` is none and
     /// returns a mutable reference to `self`.
     pub fn or_insert(&mut self, item: Item) -> &mut Item {
         if self.is_none() {
-            *self = item
+            *self = item;
         }
         self
     }
@@ -72,49 +72,61 @@ impl Item {
         index.index_mut(self)
     }
 
-    /// Casts `self` to value.
+    /// Casts `self` to [`Value`]
     pub fn as_value(&self) -> Option<&Value> {
         match *self {
             Item::Value(ref v) => Some(v),
             _ => None,
         }
     }
-    /// Casts `self` to table.
+    /// Casts `self` to [`Table`]
+    ///
+    /// <div class="warning">
+    ///
+    /// To operate on both [`Table`]s and [`InlineTable`]s, see [`Item::as_table_like`]
+    ///
+    /// </div>
     pub fn as_table(&self) -> Option<&Table> {
         match *self {
             Item::Table(ref t) => Some(t),
             _ => None,
         }
     }
-    /// Casts `self` to array of tables.
+    /// Casts `self` to [`ArrayOfTables`]
     pub fn as_array_of_tables(&self) -> Option<&ArrayOfTables> {
         match *self {
             Item::ArrayOfTables(ref a) => Some(a),
             _ => None,
         }
     }
-    /// Casts `self` to mutable value.
+    /// Casts `self` to mutable [`Value`].
     pub fn as_value_mut(&mut self) -> Option<&mut Value> {
         match *self {
             Item::Value(ref mut v) => Some(v),
             _ => None,
         }
     }
-    /// Casts `self` to mutable table.
+    /// Casts `self` to mutable [`Table`]
+    ///
+    /// <div class="warning">
+    ///
+    /// To operate on both [`Table`]s and [`InlineTable`]s, see [`Item::as_table_like_mut`]
+    ///
+    /// </div>
     pub fn as_table_mut(&mut self) -> Option<&mut Table> {
         match *self {
             Item::Table(ref mut t) => Some(t),
             _ => None,
         }
     }
-    /// Casts `self` to mutable array of tables.
+    /// Casts `self` to mutable [`ArrayOfTables`]
     pub fn as_array_of_tables_mut(&mut self) -> Option<&mut ArrayOfTables> {
         match *self {
             Item::ArrayOfTables(ref mut a) => Some(a),
             _ => None,
         }
     }
-    /// Casts `self` to value.
+    /// Casts `self` to [`Value`]
     pub fn into_value(self) -> Result<Value, Self> {
         match self {
             Item::None => Err(self),
@@ -135,7 +147,13 @@ impl Item {
         let other = other.into_value().map(Item::Value).unwrap_or(Item::None);
         *self = other;
     }
-    /// Casts `self` to table.
+    /// Casts `self` to [`Table`]
+    ///
+    /// <div class="warning">
+    ///
+    /// This does not include [`InlineTable`]s
+    ///
+    /// </div>
     pub fn into_table(self) -> Result<Table, Self> {
         match self {
             Item::Table(t) => Ok(t),
@@ -143,7 +161,7 @@ impl Item {
             _ => Err(self),
         }
     }
-    /// Casts `self` to array of tables.
+    /// Casts `self` to [`ArrayOfTables`]
     pub fn into_array_of_tables(self) -> Result<ArrayOfTables, Self> {
         match self {
             Item::ArrayOfTables(a) => Ok(a),
@@ -167,29 +185,35 @@ impl Item {
     // Starting private because the name is unclear
     pub(crate) fn make_item(&mut self) {
         let other = std::mem::take(self);
-        let other = match other.into_table().map(crate::Item::Table) {
+        let other = match other.into_table().map(Item::Table) {
             Ok(i) => i,
             Err(i) => i,
         };
-        let other = match other.into_array_of_tables().map(crate::Item::ArrayOfTables) {
+        let other = match other.into_array_of_tables().map(Item::ArrayOfTables) {
             Ok(i) => i,
             Err(i) => i,
         };
         *self = other;
     }
-    /// Returns true iff `self` is a value.
+    /// Returns true if `self` is a [`Value`]
     pub fn is_value(&self) -> bool {
         self.as_value().is_some()
     }
-    /// Returns true iff `self` is a table.
+    /// Returns true if `self` is a [`Table`]
+    ///
+    /// <div class="warning">
+    ///
+    /// To operate on both [`Table`]s and [`InlineTable`]s, see [`Item::is_table_like`]
+    ///
+    /// </div>
     pub fn is_table(&self) -> bool {
         self.as_table().is_some()
     }
-    /// Returns true iff `self` is an array of tables.
+    /// Returns true if `self` is an [`ArrayOfTables`]
     pub fn is_array_of_tables(&self) -> bool {
         self.as_array_of_tables().is_some()
     }
-    /// Returns true iff `self` is `None`.
+    /// Returns true if `self` is `None`.
     pub fn is_none(&self) -> bool {
         matches!(*self, Item::None)
     }
@@ -201,7 +225,7 @@ impl Item {
         self.as_value().and_then(Value::as_integer)
     }
 
-    /// Returns true iff `self` is an integer.
+    /// Returns true if `self` is an integer.
     pub fn is_integer(&self) -> bool {
         self.as_integer().is_some()
     }
@@ -211,7 +235,7 @@ impl Item {
         self.as_value().and_then(Value::as_float)
     }
 
-    /// Returns true iff `self` is a float.
+    /// Returns true if `self` is a float.
     pub fn is_float(&self) -> bool {
         self.as_float().is_some()
     }
@@ -221,7 +245,7 @@ impl Item {
         self.as_value().and_then(Value::as_bool)
     }
 
-    /// Returns true iff `self` is a boolean.
+    /// Returns true if `self` is a boolean.
     pub fn is_bool(&self) -> bool {
         self.as_bool().is_some()
     }
@@ -231,7 +255,7 @@ impl Item {
         self.as_value().and_then(Value::as_str)
     }
 
-    /// Returns true iff `self` is a string.
+    /// Returns true if `self` is a string.
     pub fn is_str(&self) -> bool {
         self.as_str().is_some()
     }
@@ -241,7 +265,7 @@ impl Item {
         self.as_value().and_then(Value::as_datetime)
     }
 
-    /// Returns true iff `self` is a date-time.
+    /// Returns true if `self` is a date-time.
     pub fn is_datetime(&self) -> bool {
         self.as_datetime().is_some()
     }
@@ -256,7 +280,7 @@ impl Item {
         self.as_value_mut().and_then(Value::as_array_mut)
     }
 
-    /// Returns true iff `self` is an array.
+    /// Returns true if `self` is an array.
     pub fn is_array(&self) -> bool {
         self.as_array().is_some()
     }
@@ -271,7 +295,7 @@ impl Item {
         self.as_value_mut().and_then(Value::as_inline_table_mut)
     }
 
-    /// Returns true iff `self` is an inline table.
+    /// Returns true if `self` is an inline table.
     pub fn is_inline_table(&self) -> bool {
         self.as_inline_table().is_some()
     }
@@ -292,7 +316,7 @@ impl Item {
         }
     }
 
-    /// Returns true iff `self` is either a table, or an inline table.
+    /// Returns true if `self` is either a table, or an inline table.
     pub fn is_table_like(&self) -> bool {
         self.as_table_like().is_some()
     }
@@ -342,6 +366,30 @@ impl FromStr for Item {
     }
 }
 
+impl<'b> From<&'b Item> for Item {
+    fn from(s: &'b Item) -> Self {
+        s.clone()
+    }
+}
+
+impl From<Table> for Item {
+    fn from(s: Table) -> Self {
+        Item::Table(s)
+    }
+}
+
+impl From<ArrayOfTables> for Item {
+    fn from(s: ArrayOfTables) -> Self {
+        Item::ArrayOfTables(s)
+    }
+}
+
+impl<V: Into<Value>> From<V> for Item {
+    fn from(s: V) -> Self {
+        Item::Value(s.into())
+    }
+}
+
 #[cfg(feature = "display")]
 impl std::fmt::Display for Item {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -363,7 +411,7 @@ impl std::fmt::Display for Item {
 /// # Examples
 /// ```rust
 /// # #[cfg(feature = "display")] {
-/// # use snapbox::assert_eq;
+/// # #[cfg(feature = "parse")] {
 /// # use toml_edit::*;
 /// let mut table = Table::default();
 /// let mut array = Array::default();
@@ -372,11 +420,12 @@ impl std::fmt::Display for Item {
 /// table["key1"] = value("value1");
 /// table["key2"] = value(42);
 /// table["key3"] = value(array);
-/// assert_eq(table.to_string(),
+/// assert_eq!(table.to_string(),
 /// r#"key1 = "value1"
 /// key2 = 42
 /// key3 = ["hello", '\, world']
 /// "#);
+/// # }
 /// # }
 /// ```
 pub fn value<V: Into<Value>>(v: V) -> Item {

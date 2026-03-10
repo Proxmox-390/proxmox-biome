@@ -462,7 +462,7 @@ checksum = "b410bbe7e14ab526a0e86877eb47c6996a2bd7746f027ba551028c925390e4e9"
 
 [[package]]
 name = "papaya"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "base64 0.22.1",
  "criterion",

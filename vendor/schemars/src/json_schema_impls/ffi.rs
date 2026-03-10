@@ -1,44 +1,68 @@
-use crate::r#gen::SchemaGenerator;
-use crate::schema::*;
-use crate::JsonSchema;
-use std::borrow::Cow;
+use crate::SchemaGenerator;
+use crate::_alloc_prelude::*;
+use crate::{json_schema, JsonSchema, Schema};
+use alloc::borrow::Cow;
+use serde_json::json;
 use std::ffi::{CStr, CString, OsStr, OsString};
 
 impl JsonSchema for OsString {
-    fn schema_name() -> String {
-        "OsString".to_owned()
+    fn schema_name() -> Cow<'static, str> {
+        "OsString".into()
     }
 
     fn schema_id() -> Cow<'static, str> {
-        Cow::Borrowed("std::ffi::OsString")
+        "std::ffi::OsString".into()
     }
 
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
-        let mut unix_schema = SchemaObject {
-            instance_type: Some(InstanceType::Object.into()),
-            ..Default::default()
-        };
-        let obj = unix_schema.object();
-        obj.required.insert("Unix".to_owned());
-        obj.properties
-            .insert("Unix".to_owned(), <Vec<u8>>::json_schema(generator));
-
-        let mut win_schema = SchemaObject {
-            instance_type: Some(InstanceType::Object.into()),
-            ..Default::default()
-        };
-        let obj = win_schema.object();
-        obj.required.insert("Windows".to_owned());
-        obj.properties
-            .insert("Windows".to_owned(), <Vec<u16>>::json_schema(generator));
-
-        let mut schema = SchemaObject::default();
-        schema.subschemas().one_of = Some(vec![unix_schema.into(), win_schema.into()]);
-        schema.into()
+        json_schema!({
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "Unix": <Vec<u8>>::json_schema(generator)
+                    },
+                    "required": ["Unix"]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "Windows": <Vec<u16>>::json_schema(generator)
+                    },
+                    "required": ["Windows"]
+                },
+            ]
+        })
     }
 }
 
 forward_impl!(OsStr => OsString);
 
-forward_impl!(CString => Vec<u8>);
-forward_impl!(CStr => Vec<u8>);
+impl JsonSchema for CString {
+    fn schema_name() -> Cow<'static, str> {
+        "CString".into()
+    }
+
+    fn schema_id() -> Cow<'static, str> {
+        "std::ffi::CString".into()
+    }
+
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+        let ty = if generator.contract().is_deserialize() {
+            json!(["array", "string"])
+        } else {
+            json!("array")
+        };
+
+        json_schema!({
+            "type": ty,
+            "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 255
+            },
+        })
+    }
+}
+
+forward_impl!(CStr => CString);

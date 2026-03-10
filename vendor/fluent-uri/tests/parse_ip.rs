@@ -1,19 +1,21 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
+#![cfg(feature = "net")]
 
-use fluent_uri::{HostData, Uri};
+use core::net::{Ipv4Addr, Ipv6Addr};
+
+use fluent_uri::{component::Host, UriRef};
 
 fn parse_v4(s: &str) -> Option<Ipv4Addr> {
     let s = format!("//{s}");
-    match Uri::parse(&s).ok()?.authority()?.host().data() {
-        HostData::Ipv4(addr) => Some(addr),
+    match UriRef::parse(s).ok()?.authority()?.host_parsed() {
+        Host::Ipv4(addr) => Some(addr),
         _ => None,
     }
 }
 
 fn parse_v6(s: &str) -> Option<Ipv6Addr> {
     let s = format!("//[{s}]");
-    match Uri::parse(&s).ok()?.authority()?.host().data() {
-        HostData::Ipv6 { addr, .. } => Some(addr),
+    match UriRef::parse(s).ok()?.authority()?.host_parsed() {
+        Host::Ipv6(addr) => Some(addr),
         _ => None,
     }
 }
@@ -40,7 +42,7 @@ fn test_parse_v4() {
     // octal zero
     assert!(parse_v4("255.0.0.00").is_none());
     assert!(parse_v4("255.0.00.0").is_none());
-    // preceding dot
+    // leading dot
     assert!(parse_v4(".0.0.0.0").is_none());
     // trailing dot
     assert!(parse_v4("0.0.0.0.").is_none());
@@ -101,7 +103,7 @@ fn test_parse_v6() {
     assert!(parse_v6("::1:2:3:4:5:6:7:8").is_none());
     assert!(parse_v6("1:2:3:4::5:6:7:8").is_none());
     assert!(parse_v6("1:2:3:4:5:6:7:8::").is_none());
-    // preceding colon
+    // leading colon
     assert!(parse_v6(":1:2:3:4:5:6:7:8").is_none());
     assert!(parse_v6(":1::1").is_none());
     assert!(parse_v6(":1").is_none());

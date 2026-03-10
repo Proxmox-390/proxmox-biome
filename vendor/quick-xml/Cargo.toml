@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.56"
 name = "quick-xml"
-version = "0.37.1"
+version = "0.38.4"
 build = false
 include = [
     "src/*",
@@ -47,6 +47,15 @@ repository = "https://github.com/tafia/quick-xml"
 [package.metadata.docs.rs]
 all-features = true
 
+[features]
+async-tokio = ["tokio"]
+default = []
+encoding = ["encoding_rs"]
+escape-html = []
+overlapped-lists = []
+serde-types = ["serde/derive"]
+serialize = ["serde"]
+
 [lib]
 name = "quick_xml"
 path = "src/lib.rs"
@@ -79,7 +88,7 @@ optional = true
 default-features = false
 
 [dev-dependencies.criterion]
-version = "0.4"
+version = ">=0.4,<0.8"
 
 [dev-dependencies.pretty_assertions]
 version = "1.4"
@@ -103,12 +112,3 @@ default-features = false
 
 [dev-dependencies.tokio-test]
 version = "0.4"
-
-[features]
-async-tokio = ["tokio"]
-default = []
-encoding = ["encoding_rs"]
-escape-html = []
-overlapped-lists = []
-serde-types = ["serde/derive"]
-serialize = ["serde"]

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs;
-use std::io::{ErrorKind, Write};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str;
@@ -17,8 +17,8 @@ use crate::utils::{path_to_storage, style};
 use crate::{env::get_tool_config, output::SnapshotPrinter};
 use crate::{
     env::{
-        memoize_snapshot_file, snapshot_update_behavior, OutputBehavior, SnapshotUpdateBehavior,
-        ToolConfig,
+        memoize_snapshot_file, pending_snapshot_path, snapshot_update_behavior, OutputBehavior,
+        SnapshotUpdateBehavior, ToolConfig,
     },
     snapshot::TextSnapshotKind,
 };
@@ -35,14 +35,17 @@ thread_local! {
     static RECORDED_DUPLICATES: RefCell<Vec<BTreeMap<String, Snapshot>>> = RefCell::default()
 }
 
-// This macro is basically eprintln but without being captured and
-// hidden by the test runner.
+// Writes to stderr and also to a warnings file (if INSTA_WARNINGS_FILE is set).
+// The warnings file allows cargo-insta to display warnings after tests complete,
+// since test runners like nextest suppress output from passing tests by default.
 #[macro_export]
 macro_rules! elog {
-    () => (write!(std::io::stderr()).ok());
-    ($($arg:tt)*) => ({
-        writeln!(std::io::stderr(), $($arg)*).ok();
-    })
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let msg = format!($($arg)*);
+        let _ = writeln!(std::io::stderr(), "{}", msg);
+        $crate::env::memoize_warning(&msg);
+    }};
 }
 #[cfg(feature = "glob")]
 macro_rules! print_or_panic {
@@ -166,10 +169,7 @@ impl<'a> From<BinarySnapshotValue<'a>> for SnapshotValue<'a> {
         }: BinarySnapshotValue<'a>,
     ) -> Self {
         let (name, extension) = name_and_extension.split_once('.').unwrap_or_else(|| {
-            panic!(
-                "\"{}\" does not match the format \"name.extension\"",
-                name_and_extension,
-            )
+            panic!("\"{name_and_extension}\" does not match the format \"name.extension\"",)
         });
 
         let name = if name.is_empty() {
@@ -216,9 +216,8 @@ fn detect_snapshot_name(function_name: &str, module_path: &str) -> Result<String
         Some(&was_test_prefixed) => {
             if was_test_prefixed != test_prefixed {
                 panic!(
-                    "Insta snapshot name clash detected between '{}' \
-                     and 'test_{}' in '{}'. Rename one function.",
-                    name, name, module_path
+                    "Insta snapshot name clash detected between '{name}' \
+                     and 'test_{name}' in '{module_path}'. Rename one function."
                 );
             }
         }
@@ -237,7 +236,7 @@ fn detect_snapshot_name(function_name: &str, module_path: &str) -> Result<String
     let rv = if test_idx == 1 {
         name.to_string()
     } else {
-        format!("{}-{}", name, test_idx)
+        format!("{name}-{test_idx}")
     };
     counters.insert(key, test_idx);
 
@@ -249,7 +248,7 @@ fn add_suffix_to_snapshot_name(name: Cow<'_, str>) -> Cow<'_, str> {
     Settings::with(|settings| {
         settings
             .snapshot_suffix()
-            .map(|suffix| Cow::Owned(format!("{}@{}", name, suffix)))
+            .map(|suffix| Cow::Owned(format!("{name}@{suffix}")))
             .unwrap_or_else(|| name)
     })
 }
@@ -345,7 +344,7 @@ impl<'a> SnapshotAssertionContext<'a> {
                     }
                 };
                 if allow_duplicates() {
-                    duplication_key = Some(format!("named:{}|{}", module_path, name));
+                    duplication_key = Some(format!("named:{module_path}|{name}"));
                 }
                 let file = get_snapshot_filename(
                     module_path,
@@ -355,7 +354,23 @@ impl<'a> SnapshotAssertionContext<'a> {
                     is_doctest,
                 );
                 if fs::metadata(&file).is_ok() {
-                    old_snapshot = Some(Snapshot::from_file(&file)?);
+                    match Snapshot::from_file(&file) {
+                        Ok(snapshot) => {
+                            old_snapshot = Some(snapshot);
+                        }
+                        Err(err) => {
+                            // If we can't parse the snapshot (e.g., invalid YAML,
+                            // merge conflicts, truncated file), log a warning and
+                            // proceed. The test will generate a new pending snapshot.
+                            elog!(
+                                "{}: Failed to parse snapshot file; \
+                                 a new snapshot will be generated: {}\n  Error: {}",
+                                style("warning").yellow().bold(),
+                                file.display(),
+                                err
+                            );
+                        }
+                    }
                 }
                 snapshot_name = Some(name);
                 snapshot_file = Some(file);
@@ -366,8 +381,7 @@ impl<'a> SnapshotAssertionContext<'a> {
             } => {
                 if allow_duplicates() {
                     duplication_key = Some(format!(
-                        "inline:{}|{}|{}",
-                        function_name, assertion_file, assertion_line
+                        "inline:{function_name}|{assertion_file}|{assertion_line}"
                     ));
                 } else {
                     prevent_inline_duplicate(function_name, assertion_file, assertion_line);
@@ -389,8 +403,7 @@ impl<'a> SnapshotAssertionContext<'a> {
                     module_path.replace("::", "__"),
                     None,
                     MetaData::default(),
-                    TextSnapshotContents::new(contents.to_string(), TextSnapshotKind::Inline)
-                        .into(),
+                    SnapshotContents::Text(TextSnapshotContents::from_inline_literal(contents)),
                 ));
             }
         };
@@ -436,7 +449,27 @@ impl<'a> SnapshotAssertionContext<'a> {
             self.module_path.replace("::", "__"),
             self.snapshot_name.as_ref().map(|x| x.to_string()),
             Settings::with(|settings| MetaData {
-                source: Some(path_to_storage(Path::new(self.assertion_file))),
+                source: {
+                    let source_path = Path::new(self.assertion_file);
+                    // We need to compute a relative path from the workspace to the source file.
+                    // This is necessary for workspace setups where the project is not a direct
+                    // child of the workspace root (e.g., when workspace and project are siblings).
+                    // We canonicalize paths first to properly handle symlinks.
+                    let canonicalized_base = self.workspace.canonicalize().ok();
+                    let canonicalized_path = source_path.canonicalize().ok();
+
+                    let relative = if let (Some(base), Some(path)) =
+                        (canonicalized_base, canonicalized_path)
+                    {
+                        path_relative_from(&path, &base)
+                            .unwrap_or_else(|| source_path.to_path_buf())
+                    } else {
+                        // If canonicalization fails, try with original paths
+                        path_relative_from(source_path, self.workspace)
+                            .unwrap_or_else(|| source_path.to_path_buf())
+                    };
+                    Some(path_to_storage(&relative))
+                },
                 assertion_line: Some(self.assertion_line),
                 description: settings.description().map(Into::into),
                 expression: if settings.omit_expression() {
@@ -460,15 +493,16 @@ impl<'a> SnapshotAssertionContext<'a> {
         // let's just make sure there are no more pending files lingering
         // around.
         if let Some(ref snapshot_file) = self.snapshot_file {
-            let snapshot_file = snapshot_file.clone().with_extension("snap.new");
-            fs::remove_file(snapshot_file).ok();
+            let target_path = pending_snapshot_path(self.workspace, snapshot_file);
+            let new_file = target_path.with_extension("snap.new");
+            fs::remove_file(new_file).ok();
         }
 
         // and add a null pending snapshot to a pending snapshot file if needed
         if let Some(ref pending_snapshots) = self.pending_snapshots_path {
-            if fs::metadata(pending_snapshots).is_ok() {
-                PendingInlineSnapshot::new(None, None, self.assertion_line)
-                    .save(pending_snapshots)?;
+            let target_path = pending_snapshot_path(self.workspace, pending_snapshots);
+            if fs::metadata(&target_path).is_ok() {
+                PendingInlineSnapshot::new(None, None, self.assertion_line).save(&target_path)?;
             }
         }
         Ok(())
@@ -479,11 +513,17 @@ impl<'a> SnapshotAssertionContext<'a> {
     /// pending snapshot.
     pub fn cleanup_previous_pending_binary_snapshots(&self) -> Result<(), Box<dyn Error>> {
         if let Some(ref path) = self.snapshot_file {
+            // Use pending directory if set
+            let target_path = pending_snapshot_path(self.workspace, path);
+
             // The file name to compare against has to be valid utf-8 as it is generated by this crate
             // out of utf-8 strings.
-            let file_name_prefix = format!("{}.new.", path.file_name().unwrap().to_str().unwrap());
+            let file_name_prefix = format!(
+                "{}.new.",
+                target_path.file_name().unwrap().to_str().unwrap()
+            );
 
-            let read_dir = path.parent().unwrap().read_dir();
+            let read_dir = target_path.parent().unwrap().read_dir();
 
             match read_dir {
                 Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
@@ -543,11 +583,7 @@ impl<'a> SnapshotAssertionContext<'a> {
                     if should_print {
                         elog!(
                             "{} {}",
-                            if unseen {
-                                style("created previously unseen snapshot").green()
-                            } else {
-                                style("updated snapshot").green()
-                            },
+                            style("updated snapshot").green(),
                             style(snapshot_file.display()).cyan().underlined(),
                         );
                     }
@@ -558,8 +594,9 @@ impl<'a> SnapshotAssertionContext<'a> {
             }
             SnapshotUpdateBehavior::NewFile => {
                 if let Some(ref snapshot_file) = self.snapshot_file {
-                    // File snapshot
-                    let new_path = new_snapshot.save_new(snapshot_file)?;
+                    // File snapshot - use pending directory if set
+                    let target_path = pending_snapshot_path(self.workspace, snapshot_file);
+                    let new_path = new_snapshot.save_new(&target_path)?;
                     if should_print {
                         elog!(
                             "{} {}",
@@ -577,12 +614,15 @@ impl<'a> SnapshotAssertionContext<'a> {
                         );
                     }
                 } else {
+                    // Inline snapshot - use pending directory if set
+                    let pending_path = self.pending_snapshots_path.as_ref().unwrap();
+                    let target_path = pending_snapshot_path(self.workspace, pending_path);
                     PendingInlineSnapshot::new(
                         Some(new_snapshot),
                         self.old_snapshot.clone(),
                         self.assertion_line,
                     )
-                    .save(self.pending_snapshots_path.as_ref().unwrap())?;
+                    .save(&target_path)?;
                 }
             }
             SnapshotUpdateBehavior::NoUpdate => {}
@@ -685,8 +725,56 @@ impl<'a> SnapshotAssertionContext<'a> {
     }
 }
 
+/// Computes a relative path from `base` to `path`, returning a path with `../` components
+/// if necessary.
+///
+/// This function is vendored from the old Rust standard library implementation
+/// (pre-1.0, removed in RFC 474) and is distributed under the same terms as the
+/// Rust project (MIT/Apache-2.0 dual license).
+///
+/// Unlike `Path::strip_prefix`, this function can handle cases where `path` is not
+/// a descendant of `base`, making it suitable for finding relative paths between
+/// arbitrary directories (e.g., between sibling directories in a workspace).
+fn path_relative_from(path: &Path, base: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+
+    if path.is_absolute() != base.is_absolute() {
+        if path.is_absolute() {
+            Some(PathBuf::from(path))
+        } else {
+            None
+        }
+    } else {
+        let mut ita = path.components();
+        let mut itb = base.components();
+        let mut comps: Vec<Component> = vec![];
+        loop {
+            match (ita.next(), itb.next()) {
+                (None, None) => break,
+                (Some(a), None) => {
+                    comps.push(a);
+                    comps.extend(ita.by_ref());
+                    break;
+                }
+                (None, _) => comps.push(Component::ParentDir),
+                (Some(a), Some(b)) if comps.is_empty() && a == b => {}
+                (Some(a), Some(_b)) => {
+                    comps.push(Component::ParentDir);
+                    for _ in itb {
+                        comps.push(Component::ParentDir);
+                    }
+                    comps.push(a);
+                    comps.extend(ita.by_ref());
+                    break;
+                }
+            }
+        }
+        Some(comps.iter().map(|c| c.as_os_str()).collect())
+    }
+}
+
 fn prevent_inline_duplicate(function_name: &str, assertion_file: &str, assertion_line: u32) {
-    let key = format!("{}|{}|{}", function_name, assertion_file, assertion_line);
+    let key = format!("{function_name}|{assertion_file}|{assertion_line}");
     let mut set = INLINE_DUPLICATES.lock().unwrap();
     if set.contains(&key) {
         // drop the lock so we don't poison it

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt;
+use std::iter;
 use std::sync::{Mutex, MutexGuard};
 
 use cookie_store::CookieStore;
@@ -168,10 +169,20 @@ impl<'a> CookieJar<'a> {
     pub fn release(self) {}
 }
 
+// CookieStore::new() changes parameters depending on feature flag "public_suffix".
+// That means if a user enables public_suffix for CookieStore through diamond dependency,
+// we start having compilation errors un ureq.
+//
+// This workaround instantiates a CookieStore in a way that does not change with flags.
+fn instantiate_cookie_store() -> CookieStore {
+    let i = iter::empty::<Result<cookie_store::Cookie<'static>, &str>>();
+    CookieStore::from_cookies(i, true).unwrap()
+}
+
 impl SharedCookieJar {
     pub(crate) fn new() -> Self {
         SharedCookieJar {
-            inner: Mutex::new(CookieStore::new()),
+            inner: Mutex::new(instantiate_cookie_store()),
         }
     }
 
@@ -260,7 +271,12 @@ fn is_cookie_rfc_compliant(cookie: &cookie_store::Cookie) -> bool {
 
     let value = cookie.value().as_bytes();
 
-    let valid_value = value.iter().all(is_valid_value);
+    let valid_value = value
+        .strip_prefix(br#"""#)
+        .and_then(|value| value.strip_suffix(br#"""#))
+        .unwrap_or(value)
+        .iter()
+        .all(is_valid_value);
 
     if !valid_value {
         // NB. Do not log cookie value since it might be secret
@@ -312,11 +328,19 @@ mod test {
     fn illegal_cookie_value() {
         let cookie = Cookie::parse("name=borked,", &uri()).unwrap();
         assert!(!is_cookie_rfc_compliant(cookie.as_cookie_store()));
+        let cookie = Cookie::parse("name=\"borked", &uri()).unwrap();
+        assert!(!is_cookie_rfc_compliant(cookie.as_cookie_store()));
+        let cookie = Cookie::parse("name=borked\"", &uri()).unwrap();
+        assert!(!is_cookie_rfc_compliant(cookie.as_cookie_store()));
+        let cookie = Cookie::parse("name=\"\"borked\"", &uri()).unwrap();
+        assert!(!is_cookie_rfc_compliant(cookie.as_cookie_store()));
     }
 
     #[test]
     fn legal_cookie_name_value() {
         let cookie = Cookie::parse("name=value", &uri()).unwrap();
+        assert!(is_cookie_rfc_compliant(cookie.as_cookie_store()));
+        let cookie = Cookie::parse("name=\"value\"", &uri()).unwrap();
         assert!(is_cookie_rfc_compliant(cookie.as_cookie_store()));
     }
 }

@@ -12,17 +12,23 @@
 [package]
 edition = "2018"
 name = "libmimalloc-sys"
-version = "0.1.43"
+version = "0.1.44"
 authors = ["Octavian Oncescu <octavonce@gmail.com>"]
 build = "build.rs"
 links = "mimalloc"
 exclude = [
-    "/c_src/mimalloc/bin",
-    "/c_src/mimalloc/cmake",
-    "/c_src/mimalloc/doc",
-    "/c_src/mimalloc/docs",
-    "/c_src/mimalloc/ide",
-    "/c_src/mimalloc/test",
+    "/c_src/mimalloc/v2/bin",
+    "/c_src/mimalloc/v2/cmake",
+    "/c_src/mimalloc/v2/doc",
+    "/c_src/mimalloc/v2/docs",
+    "/c_src/mimalloc/v2/ide",
+    "/c_src/mimalloc/v2/test",
+    "/c_src/mimalloc/v3/bin",
+    "/c_src/mimalloc/v3/cmake",
+    "/c_src/mimalloc/v3/doc",
+    "/c_src/mimalloc/v3/docs",
+    "/c_src/mimalloc/v3/ide",
+    "/c_src/mimalloc/v3/test",
 ]
 autolib = false
 autobins = false
@@ -69,3 +75,4 @@ local_dynamic_tls = []
 no_thp = []
 override = []
 secure = []
+v3 = []

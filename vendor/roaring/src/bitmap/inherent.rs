@@ -1,9 +1,9 @@
 use core::cmp::Ordering;
 use core::mem::size_of;
-use core::ops::RangeBounds;
+use core::ops::{RangeBounds, RangeInclusive};
 
 use crate::bitmap::store::BITMAP_LENGTH;
-use crate::RoaringBitmap;
+use crate::{IntegerTooSmall, RoaringBitmap};
 
 use super::container::Container;
 use super::util;
@@ -211,6 +211,31 @@ impl RoaringBitmap {
         }
     }
 
+    /// Searches and then modifies a specific container with `M` by the given key.
+    /// Creates a new container using `B` if it doesn't exist.
+    ///
+    /// Returns `R` based on `M` or `B`.
+    #[inline]
+    pub(crate) fn mod_or_build_container_by_key<
+        R,
+        M: FnMut(&mut Container) -> R,
+        B: FnMut(u16) -> (Container, R),
+    >(
+        &mut self,
+        key: u16,
+        mut modifier: M,
+        mut builder: B,
+    ) -> R {
+        match self.containers.binary_search_by_key(&key, |c| c.key) {
+            Ok(loc) => modifier(&mut self.containers[loc]),
+            Err(loc) => {
+                let build_value = builder(key);
+                self.containers.insert(loc, build_value.0);
+                build_value.1
+            }
+        }
+    }
+
     /// Inserts a range of values.
     /// Returns the number of inserted values.
     ///
@@ -237,14 +262,19 @@ impl RoaringBitmap {
 
         let (start_container_key, start_index) = util::split(start);
         let (end_container_key, end_index) = util::split(end);
-
-        // Find the container index for start_container_key
-        let first_index = self.find_container_by_key(start_container_key);
+        let modify_container_range =
+            |bitmap: &mut Self, container_key: u16, range: RangeInclusive<u16>| {
+                bitmap.mod_or_build_container_by_key(
+                    container_key,
+                    |container| container.insert_range(range.clone()),
+                    |key| (Container::new_with_range(key, range.clone()), range.len() as u64),
+                )
+            };
 
         // If the end range value is in the same container, just call into
         // the one container.
         if start_container_key == end_container_key {
-            return self.containers[first_index].insert_range(start_index..=end_index);
+            return modify_container_range(self, start_container_key, start_index..=end_index);
         }
 
         // For the first container, insert start_index..=u16::MAX, with
@@ -256,19 +286,14 @@ impl RoaringBitmap {
         let mut inserted = 0;
 
         for i in start_container_key..end_container_key {
-            let index = self.find_container_by_key(i);
-
-            // Insert the range subset for this container
-            inserted += self.containers[index].insert_range(low..=u16::MAX);
+            inserted += modify_container_range(self, i, low..=u16::MAX);
 
             // After the first container, always fill the containers.
             low = 0;
         }
 
         // Handle the last container
-        let last_index = self.find_container_by_key(end_container_key);
-
-        inserted += self.containers[last_index].insert_range(0..=end_index);
+        inserted += modify_container_range(self, end_container_key, 0..=end_index);
 
         inserted
     }
@@ -291,22 +316,50 @@ impl RoaringBitmap {
     /// assert_eq!(rb.iter().collect::<Vec<u32>>(), vec![1, 3, 5]);
     /// ```
     #[inline]
+    #[deprecated(since = "0.11.0", note = "use `try_push` instead")]
     pub fn push(&mut self, value: u32) -> bool {
+        self.try_push(value).is_ok()
+    }
+
+    /// Pushes `value` in the bitmap only if it is greater than the current maximum value.
+    ///
+    /// Returns an error if the value is not greater than the current maximum value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use roaring::{RoaringBitmap, IntegerTooSmall};
+    ///
+    /// let mut rb = RoaringBitmap::new();
+    /// assert!(rb.try_push(1).is_ok());
+    /// assert!(rb.try_push(3).is_ok());
+    /// assert_eq!(rb.try_push(3), Err(IntegerTooSmall));
+    /// assert!(rb.try_push(5).is_ok());
+    ///
+    /// assert_eq!(rb.iter().collect::<Vec<u32>>(), vec![1, 3, 5]);
+    /// ```
+    #[inline]
+    pub fn try_push(&mut self, value: u32) -> Result<(), IntegerTooSmall> {
         let (key, index) = util::split(value);
 
         match self.containers.last_mut() {
-            Some(container) if container.key == key => container.push(index),
-            Some(container) if container.key > key => false,
+            Some(container) if container.key == key => {
+                if container.push(index) {
+                    Ok(())
+                } else {
+                    Err(IntegerTooSmall)
+                }
+            }
+            Some(container) if container.key > key => Err(IntegerTooSmall),
             _otherwise => {
                 let mut container = Container::new(key);
                 container.push(index);
                 self.containers.push(container);
-                true
+                Ok(())
             }
         }
     }
 
-    ///
     /// Pushes `value` at the end of the bitmap.
     /// It is up to the caller to have validated index > self.max()
     ///
@@ -805,6 +858,68 @@ impl RoaringBitmap {
         } else {
             self.containers.clear();
         }
+    }
+
+    /// Optimizes the container storage for this bitmap.
+    /// Returns true if the container storage was modified, false if not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use roaring::RoaringBitmap;
+    ///
+    /// let mut rb = RoaringBitmap::from_iter(1000..100000);
+    /// rb.optimize();
+    /// ```
+    pub fn optimize(&mut self) -> bool {
+        let mut changed = false;
+        for container in &mut self.containers {
+            changed |= container.optimize()
+        }
+        changed
+    }
+
+    /// Removes run-length encoding even when it is more space efficient.
+    ///
+    /// Returns true if the container storage was modified, false if not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use roaring::RoaringBitmap;
+    ///
+    /// let mut rb = RoaringBitmap::from_iter(0..=10000);
+    /// rb.optimize();
+    /// assert!(rb.remove_run_compression());
+    /// ```
+    pub fn remove_run_compression(&mut self) -> bool {
+        let mut changed = false;
+        for container in &mut self.containers {
+            changed |= container.remove_run_compression()
+        }
+        changed
+    }
+
+    /// Ensure the bitmap is internally valid
+    ///
+    /// This is useful for development, but is not needed for normal use:
+    /// bitmaps should _always_ be internally valid.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bitmap is not valid, with a description of the problem.
+    #[doc(hidden)]
+    pub fn internal_validate(&self) -> Result<(), &'static str> {
+        for window in self.containers.windows(2) {
+            let [first, second] = window else { unreachable!() };
+            if second.key <= first.key {
+                return Err("keys are not strictly increasing");
+            }
+        }
+        for container in &self.containers {
+            container.store.internal_validate()?;
+        }
+        Ok(())
     }
 }
 

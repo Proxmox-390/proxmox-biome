@@ -1,5 +1,68 @@
 # Changelog
 
+## [1.3.2] - 2025-11-06
+
+### Added
+
+- `as_fields`, `to_fields_le`, `as_u128`, `to_u128_le`, `as_u64_pair`, `as_bytes`, `into_bytes`, `to_bytes_le`, `is_nil`, and `is_max` methods to mirror corresponding methods on upstream `Uuid`.
+
+## [1.3.1] - 2025-09-30
+
+### Added
+
+- New `v7` feature allows for v7 UUIDs to be created. Thanks [davidbarsky](https://github.com/davidbarsky) for your first contribution!
+
+### Fixed
+
+Replaced obsolete `doc_auto_cfg` with `doc_cfg`, to fix Rust nightly builds with the `doc_cfg` flag enabled.
+
+## [1.3.0] - 2025-08-19
+
+### Added
+
+- For schemars integration, automatic replacement support with [`typify`] and [`progenitor`] via the new `x-rust-type` extension.
+- The `TypedUuidKind` trait has a new optional method called `alias`, which represents a type alias. `alias` is used by schemars integration in a few ways: for the schema name of `TypedUuid<T>`, as well as for automatic replacement support.
+
+[`typify`]: https://github.com/oxidecomputer/typify
+[`progenitor`]: https://github.com/oxidecomputer/progenitor
+
+### Changed
+
+- MSRV updated to Rust 1.79.
+
+## [1.2.4] - 2025-06-17
+
+### Added
+
+New `upcast` method enables safer conversion of one typed UUID to another. To opt into an upcast from `TypedUuid<T>` to `TypedUuid<U>`, implement `From<T> for U`.
+
+## [1.2.3] - 2025-06-16
+
+(This release was yanked because `cast` was renamed to `upcast`.)
+
+## [1.2.2] - 2025-05-24
+
+### Added
+
+Added the following implementations:
+
+- `AsRef<[u8]>` for `TypedUuid<T>`.
+- `From<TypedUuid<T>> for Vec<u8>`.
+
+## [1.2.1] - 2025-01-14
+
+Updated MSRV in readme.
+
+## [1.2.0] - 2025-01-14
+
+### Added
+
+- New, optional feature `proptest1` enables support for generating random instances of UUIDs. Currently, v4 UUIDs are always generated.
+
+### Changed
+
+- MSRV updated to Rust 1.67.
+
 ## [1.1.3] - 2024-11-07
 
 ### Added
@@ -75,6 +138,14 @@ Documentation improvements.
 
 Initial release.
 
+[1.3.2]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.3.2
+[1.3.1]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.3.1
+[1.3.0]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.3.0
+[1.2.4]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.2.4
+[1.2.3]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.2.3
+[1.2.2]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.2.2
+[1.2.1]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.2.1
+[1.2.0]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.2.0
 [1.1.3]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.1.3
 [1.1.2]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.1.2
 [1.1.1]: https://github.com/oxidecomputer/newtype-uuid/releases/newtype-uuid-1.1.1

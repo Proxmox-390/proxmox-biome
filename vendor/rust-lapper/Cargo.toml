@@ -12,8 +12,13 @@
 [package]
 edition = "2018"
 name = "rust-lapper"
-version = "1.1.0"
+version = "1.2.0"
 authors = ["Seth Stadick <sstadick@gmail.com>"]
+build = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "A fast and easy interval overlap library"
 documentation = "https://docs.rs/rust-lapper"
 readme = "README.md"
@@ -31,15 +36,22 @@ categories = [
 license = "MIT"
 repository = "https://github.com/sstadick/rust-lapper"
 
-[[example]]
-name = "serde"
-required-features = ["with_serde"]
+[lib]
+name = "rust_lapper"
+path = "src/lib.rs"
 
 [[example]]
 name = "ex1"
+path = "examples/ex1.rs"
+
+[[example]]
+name = "serde"
+path = "examples/serde.rs"
+required-features = ["with_serde"]
 
 [[bench]]
 name = "lapper_benchmark"
+path = "benches/lapper_benchmark.rs"
 harness = false
 
 [dependencies.num-traits]

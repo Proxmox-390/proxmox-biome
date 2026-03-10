@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.72.0"
 name = "papaya"
-version = "0.2.1"
+version = "0.2.3"
 authors = ["Ibraheem Ahmed <ibraheem@ibraheem.ca>"]
 build = false
 exclude = ["assets/*"]
@@ -38,9 +38,9 @@ categories = [
 license = "MIT"
 repository = "https://github.com/ibraheemdev/papaya"
 
-[profile.test]
-debug-assertions = true
-inherits = "release"
+[features]
+default = []
+serde = ["dep:serde"]
 
 [lib]
 name = "papaya"
@@ -114,10 +114,6 @@ features = [
     "rt",
 ]
 
-[features]
-default = []
-serde = ["dep:serde"]
-
 [lints.rust.unexpected_cfgs]
 level = "warn"
 priority = 0
@@ -125,3 +121,7 @@ check-cfg = [
     "cfg(papaya_stress)",
     "cfg(papaya_asan)",
 ]
+
+[profile.test]
+debug-assertions = true
+inherits = "release"

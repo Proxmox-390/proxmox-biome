@@ -76,7 +76,7 @@ use crate::{WithBody, WithoutBody};
 /// server and it is returned to the agent's pool, once the Body instance (or reader) is dropped.
 ///
 /// There is an asymmetry in that sending a request body will borrow the Agent instance, while receiving
-/// the response body does not. This inconvencience is somewhat mitigated by that [`Agent::run()`] (or
+/// the response body does not. This inconvenience is somewhat mitigated by that [`Agent::run()`] (or
 /// going via the methods such as [`Agent::get()`]), borrows `&self`, i.e. not exclusive `mut` borrows.
 ///
 /// That cloning the agent shares the connection pool is considered a feature. It is often useful to
@@ -213,14 +213,14 @@ impl Agent {
     /// ```
     pub fn run(&self, request: Request<impl AsSendBody>) -> Result<Response<Body>, Error> {
         let (parts, mut body) = request.into_parts();
-        let body = body.as_body();
+        let mut body = body.as_body();
         let mut request = Request::from_parts(parts, ());
 
         // When using the http-crate API we cannot enforce the correctness of
         // Method vs Body combos. This also solves a problem where we can't
         // determine if a non-standard method is supposed to have a body such
         // as for WebDAV PROPFIND.
-        let has_body = !matches!(body.body_mode(), BodyMode::NoBody);
+        let has_body = !matches!(body.body_mode(), Ok(BodyMode::NoBody));
         if has_body {
             request.extensions_mut().insert(ForceSendBody);
         }

@@ -172,7 +172,7 @@ impl Default for Config {
             targets: false,
             render_thread_ids: false,
             render_thread_names: false,
-            wraparound: usize::max_value(),
+            wraparound: usize::MAX,
             verbose_entry: false,
             verbose_exit: false,
             span_retrace: false,
@@ -253,7 +253,7 @@ impl Buffers {
         // Render something when wraparound occurs so the user is aware of it
         if config.indent_lines {
             match style {
-                SpanMode::PreOpen { .. } | SpanMode::Open { .. } => {
+                SpanMode::PreOpen | SpanMode::Open { .. } => {
                     if indent > 0 && (indent + 1) % config.wraparound == 0 {
                         self.current_buf.push_str(&prefix);
                         for _ in 0..(indent % config.wraparound * config.indent_amount) {
@@ -347,7 +347,7 @@ fn indent_block_with_lines(
                     SpanMode::Open { .. } => buf.push_str(LINE_OPEN),
                     SpanMode::Retrace { .. } => buf.push_str(LINE_OPEN),
                     SpanMode::Close { .. } => buf.push_str(LINE_CLOSE),
-                    SpanMode::PreOpen { .. } | SpanMode::PostClose => {}
+                    SpanMode::PreOpen | SpanMode::PostClose => {}
                     SpanMode::Event => {}
                 }
             }
@@ -448,12 +448,14 @@ fn indent_block_with_lines(
 
     // add the rest of the indentation, since we don't want to draw horizontal lines
     // for subsequent lines
-    for i in 0..indent_amount {
-        if i % indent_amount == 0 {
-            s.push_str(LINE_VERT);
-        } else {
-            s.push(' ');
-        }
+    match style {
+        SpanMode::Open { .. } | SpanMode::Retrace { .. } => s.push_str("  "),
+        SpanMode::Close { .. } => s.push(' '),
+        _ => {}
+    }
+    s.push_str(LINE_VERT);
+    for _ in 1..=indent_amount {
+        s.push(' ');
     }
 
     // add all of the actual content, with each line preceded by the indent string
@@ -489,11 +491,16 @@ fn indent_block(
     if indent_lines {
         indent_block_with_lines(&lines, buf, indent, indent_amount, prefix, style);
     } else {
-        let indent_str = String::from(" ").repeat(indent_spaces);
+        let mut indent_str = " ".repeat(indent_spaces);
+        let mut first_line = true;
         for line in lines {
             buf.push_str(prefix);
             buf.push(' ');
             buf.push_str(&indent_str);
+            if first_line {
+                first_line = false;
+                indent_str.push_str("  ");
+            }
             buf.push_str(line);
             buf.push('\n');
         }

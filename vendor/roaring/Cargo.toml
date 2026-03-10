@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.65.0"
+rust-version = "1.82.0"
 name = "roaring"
-version = "0.10.12"
+version = "0.11.3"
 authors = [
     "Wim Looman <wim@nemo157.com>",
     "Kerollmops <kero@meilisearch.com>",
@@ -79,6 +79,10 @@ path = "tests/iter.rs"
 [[test]]
 name = "iter_advance_to"
 path = "tests/iter_advance_to.rs"
+
+[[test]]
+name = "iter_next_range"
+path = "tests/iter_next_range.rs"
 
 [[test]]
 name = "iter_range"

@@ -5,8 +5,7 @@ use crate::repr::Decor;
 use crate::value::{DEFAULT_LEADING_VALUE_DECOR, DEFAULT_VALUE_DECOR};
 use crate::{Item, RawString, Value};
 
-/// Type representing a TOML array,
-/// payload of the `Value::Array` variant's value
+/// A TOML [`Value`] that contains a sequence of [`Value`]s
 #[derive(Debug, Default, Clone)]
 pub struct Array {
     // `trailing` represents whitespaces, newlines
@@ -20,11 +19,11 @@ pub struct Array {
     pub(crate) values: Vec<Item>,
 }
 
-/// An owned iterator type over `Table`'s key/value pairs.
+/// An owned iterator type over [`Array`]'s [`Value`]s
 pub type ArrayIntoIter = Box<dyn Iterator<Item = Value>>;
-/// An iterator type over `Array`'s values.
+/// An iterator type over [`Array`]'s [`Value`]s
 pub type ArrayIter<'a> = Box<dyn Iterator<Item = &'a Value> + 'a>;
-/// An iterator type over `Array`'s values.
+/// An iterator type over [`Array`]'s [`Value`]s
 pub type ArrayIterMut<'a> = Box<dyn Iterator<Item = &'a mut Value> + 'a>;
 
 /// Constructors
@@ -132,7 +131,7 @@ impl Array {
         self.values.len()
     }
 
-    /// Return true iff `self.len() == 0`.
+    /// Return true if `self.len() == 0`.
     ///
     /// # Examples
     ///
@@ -150,7 +149,7 @@ impl Array {
 
     /// Clears the array, removing all values. Keeps the allocated memory for reuse.
     pub fn clear(&mut self) {
-        self.values.clear()
+        self.values.clear();
     }
 
     /// Returns a reference to the value at the given index, or `None` if the index is out of
@@ -176,8 +175,8 @@ impl Array {
     /// ```
     pub fn push<V: Into<Value>>(&mut self, v: V) {
         self.value_op(v.into(), true, |items, value| {
-            items.push(Item::Value(value))
-        })
+            items.push(Item::Value(value));
+        });
     }
 
     /// Appends a new, already formatted value to the end of the array.
@@ -213,8 +212,8 @@ impl Array {
     /// ```
     pub fn insert<V: Into<Value>>(&mut self, index: usize, v: V) {
         self.value_op(v.into(), true, |items, value| {
-            items.insert(index, Item::Value(value))
-        })
+            items.insert(index, Item::Value(value));
+        });
     }
 
     /// Inserts an already formatted value at the given position within the array, shifting all
@@ -237,7 +236,7 @@ impl Array {
     /// # }
     /// ```
     pub fn insert_formatted(&mut self, index: usize, v: Value) {
-        self.values.insert(index, Item::Value(v))
+        self.values.insert(index, Item::Value(v));
     }
 
     /// Replaces the element at the given position within the array, preserving existing formatting.
@@ -287,7 +286,7 @@ impl Array {
     pub fn replace_formatted(&mut self, index: usize, v: Value) -> Value {
         match mem::replace(&mut self.values[index], Item::Value(v)) {
             Item::Value(old_value) => old_value,
-            x => panic!("non-value item {:?} in an array", x),
+            x => panic!("non-value item {x:?} in an array"),
         }
     }
 
@@ -307,7 +306,7 @@ impl Array {
         let removed = self.values.remove(index);
         match removed {
             Item::Value(v) => v,
-            x => panic!("non-value item {:?} in an array", x),
+            x => panic!("non-value item {x:?} in an array"),
         }
     }
 
@@ -352,7 +351,7 @@ impl Array {
                 (None, Some(_)) => std::cmp::Ordering::Less,
                 (Some(lhs), Some(rhs)) => compare(lhs, rhs),
             }
-        })
+        });
     }
 
     /// Sorts the array with a key extraction function.

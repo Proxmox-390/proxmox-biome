@@ -1,7 +1,7 @@
-macro_rules! no_ref_schema {
+macro_rules! inline_schema {
     () => {
-        fn is_referenceable() -> bool {
-            false
+        fn inline_schema() -> bool {
+            true
         }
     };
 }
@@ -9,81 +9,89 @@ macro_rules! no_ref_schema {
 macro_rules! forward_impl {
     (($($impl:tt)+) => $target:ty) => {
         impl $($impl)+ {
-            fn is_referenceable() -> bool {
-                <$target>::is_referenceable()
+            fn inline_schema() -> bool {
+                <$target as $crate::JsonSchema>::inline_schema()
             }
 
-            fn schema_name() -> String {
-                <$target>::schema_name()
+            fn schema_name() -> alloc::borrow::Cow<'static, str> {
+                <$target as $crate::JsonSchema>::schema_name()
             }
 
-            fn schema_id() -> std::borrow::Cow<'static, str> {
-                <$target>::schema_id()
+            fn schema_id() -> alloc::borrow::Cow<'static, str> {
+                <$target as $crate::JsonSchema>::schema_id()
             }
 
-            fn json_schema(generator: &mut SchemaGenerator) -> Schema {
-                <$target>::json_schema(generator)
+            fn json_schema(generator: &mut $crate::SchemaGenerator) -> $crate::Schema {
+                <$target as $crate::JsonSchema>::json_schema(generator)
             }
 
-            fn _schemars_private_non_optional_json_schema(generator: &mut SchemaGenerator) -> Schema {
-                <$target>::_schemars_private_non_optional_json_schema(generator)
+            fn _schemars_private_non_optional_json_schema(generator: &mut $crate::SchemaGenerator) -> $crate::Schema {
+                #[allow(clippy::used_underscore_items)]
+                <$target as $crate::JsonSchema>::_schemars_private_non_optional_json_schema(generator)
             }
 
             fn _schemars_private_is_option() -> bool {
-                <$target>::_schemars_private_is_option()
+                #[allow(clippy::used_underscore_items)]
+                <$target as $crate::JsonSchema>::_schemars_private_is_option()
             }
         }
     };
     ($ty:ty => $target:ty) => {
-        forward_impl!((JsonSchema for $ty) => $target);
+        forward_impl!(($crate::JsonSchema for $ty) => $target);
     };
 }
 
 mod array;
-#[cfg(feature = "arrayvec05")]
-mod arrayvec05;
-#[cfg(feature = "arrayvec07")]
-mod arrayvec07;
-#[cfg(std_atomic)]
-mod atomic;
-#[cfg(feature = "bytes")]
-mod bytes;
-#[cfg(feature = "chrono")]
-mod chrono;
 mod core;
-#[cfg(any(
-    feature = "rust_decimal",
-    feature = "bigdecimal03",
-    feature = "bigdecimal04"
-))]
-mod decimal;
-#[cfg(feature = "either")]
-mod either;
-#[cfg(feature = "enumset")]
-mod enumset;
-mod ffi;
-#[cfg(feature = "indexmap")]
-mod indexmap;
-#[cfg(feature = "indexmap2")]
-mod indexmap2;
 mod maps;
-mod nonzero_signed;
-mod nonzero_unsigned;
+mod nonzero;
 mod primitives;
-#[cfg(feature = "semver")]
-mod semver;
 mod sequences;
 mod serdejson;
-#[cfg(feature = "smallvec")]
-mod smallvec;
-#[cfg(feature = "smol_str")]
-mod smol_str;
-mod time;
+mod std_time;
 mod tuple;
-#[cfg(feature = "url")]
-mod url;
-#[cfg(feature = "uuid08")]
-mod uuid08;
+mod wrapper;
+
+mod atomic;
+
+#[cfg(feature = "std")]
+mod ffi;
+
+#[cfg(feature = "arrayvec07")]
+mod arrayvec07;
+
+#[cfg(feature = "bytes1")]
+mod bytes1;
+
+#[cfg(feature = "chrono04")]
+mod chrono04;
+
+#[cfg(any(feature = "rust_decimal1", feature = "bigdecimal04"))]
+mod decimal;
+
+#[cfg(feature = "either1")]
+mod either1;
+
+#[cfg(feature = "indexmap2")]
+mod indexmap2;
+
+#[cfg(feature = "jiff02")]
+mod jiff02;
+
+#[cfg(feature = "semver1")]
+mod semver1;
+
+#[cfg(feature = "smallvec1")]
+forward_impl!((<A: smallvec1::Array> crate::JsonSchema for smallvec1::SmallVec<A> where A::Item: crate::JsonSchema) => alloc::vec::Vec<A::Item>);
+
+#[cfg(feature = "smol_str02")]
+forward_impl!(smol_str02::SmolStr => alloc::string::String);
+
+#[cfg(feature = "smol_str03")]
+forward_impl!(smol_str03::SmolStr => alloc::string::String);
+
+#[cfg(feature = "url2")]
+mod url2;
+
 #[cfg(feature = "uuid1")]
 mod uuid1;
-mod wrapper;

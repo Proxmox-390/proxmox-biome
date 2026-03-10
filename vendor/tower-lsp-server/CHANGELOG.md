@@ -5,10 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+<!-- Don't forget to update the links at the end -->
+
 ## [Unreleased]
 
+[Unreleased]: https://github.com/tower-lsp-community/tower-lsp-server/compare/v0.22.1...HEAD
+
+## [0.23.0] - 2025-12-07
+
+### Added
+
+- add Amber LSP to README Projects section (#66)
+- support `window/workDoneProgress/create` requests
+
+### Changed
+
+- Change the LSP specification types library from `gluon-lang/lsp-types` (which was unmaintained) to `tower-lsp-community/ls-types` (our fork).
+
+  The initial release manually fixes typos that are blocking for some projects.
+
+  In the long term, ls-types will take the approach of codegen based on the types model provided by the LSP specification. This should remove any kind of typos or documentation desync. See https://github.com/tower-lsp-community/ls-types/issues/22#issuecomment-3483189800.
+
+### Fixed
+
+- use `WorkspaceSymbolResponse` in `symbol()` return value
+
+## [0.22.1] - 2025-08-05
+
+[0.22.1]: https://github.com/tower-lsp-community/tower-lsp-server/compare/v0.22.0...v0.22.1
+
+### Added
+
+- add systemd-lsp to projects section (#59)
+- add biome and oxc to projects section (#60)
+
+### Changed
+
+- `UriExt::to_file_path` do not panic on invalid/empty uri (#61)
 
 ## [0.22.0] - 2025-04-07
+
+[0.22.0]: https://github.com/tower-lsp-community/tower-lsp-server/compare/v0.21.1...v0.22.0
 
 ### Changed
 
@@ -22,16 +59,20 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [0.21.1] - 2025-04-07
 
+[0.21.1]: https://github.com/tower-lsp-community/tower-lsp-server/compare/v0.21.0...v0.21.1
+
 ### Added
 
 * Export `UriExt` to reduce development friction (#38)
 
 ### Fixed
 
-* Do no panic when recieving a response whose request has been cancelled (#37)
+* Do no panic when receiving a response whose request has been cancelled (#37)
 * Allow `null` param in JSON-RPC response when it should be None (#41)
 
 ## [0.21.0] - 2025-03-16
+
+[0.21.0]: https://github.com/tower-lsp-community/tower-lsp-server/compare/v0.20.0...v0.21.0
 
 ### Added
 
@@ -633,7 +674,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   * `textDocument/hover`
   * `textDocument/documentHighlight`
 
-[Unreleased]: https://github.com/ebkalderon/tower-lsp/compare/v0.20.0...HEAD
 [0.20.0]: https://github.com/ebkalderon/tower-lsp/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/ebkalderon/tower-lsp/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/ebkalderon/tower-lsp/compare/v0.17.0...v0.18.0

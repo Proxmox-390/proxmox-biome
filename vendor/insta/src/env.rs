@@ -24,7 +24,7 @@ pub fn get_tool_config(workspace_dir: &Path) -> Arc<ToolConfig> {
         .entry(workspace_dir.to_path_buf())
         .or_insert_with(|| {
             ToolConfig::from_workspace(workspace_dir)
-                .unwrap_or_else(|e| panic!("Error building config from {:?}: {}", workspace_dir, e))
+                .unwrap_or_else(|e| panic!("Error building config from {workspace_dir:?}: {e}"))
                 .into()
         })
         .clone()
@@ -108,8 +108,8 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Deserialize(_) => write!(f, "failed to deserialize tool config"),
-            Error::Env(var) => write!(f, "invalid value for env var '{}'", var),
-            Error::Config(var) => write!(f, "invalid value for config '{}'", var),
+            Error::Env(var) => write!(f, "invalid value for env var '{var}'"),
+            Error::Config(var) => write!(f, "invalid value for config '{var}'"),
         }
     }
 }
@@ -148,6 +148,8 @@ pub struct ToolConfig {
     review_include_hidden: bool,
     #[cfg(feature = "_cargo_insta_internal")]
     review_warn_undiscovered: bool,
+    #[cfg(feature = "_cargo_insta_internal")]
+    disable_nextest_doctest: bool,
 }
 
 impl ToolConfig {
@@ -294,7 +296,7 @@ impl ToolConfig {
                     .unwrap_or(false),
                 Ok("1") => true,
                 Ok("0") => false,
-                _ => return Err(Error::Env("INSTA_RUNNER_FALLBACK")),
+                _ => return Err(Error::Env("INSTA_TEST_RUNNER_FALLBACK")),
             },
             #[cfg(feature = "_cargo_insta_internal")]
             test_unreferenced: {
@@ -324,6 +326,10 @@ impl ToolConfig {
             review_warn_undiscovered: resolve(&cfg, &["review", "warn_undiscovered"])
                 .and_then(|x| x.as_bool())
                 .unwrap_or(true),
+            #[cfg(feature = "_cargo_insta_internal")]
+            disable_nextest_doctest: resolve(&cfg, &["test", "disable_nextest_doctest"])
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
         })
     }
 
@@ -393,6 +399,10 @@ impl ToolConfig {
     pub fn review_warn_undiscovered(&self) -> bool {
         self.review_warn_undiscovered
     }
+
+    pub fn disable_nextest_doctest(&self) -> bool {
+        self.disable_nextest_doctest
+    }
 }
 
 /// How snapshots are supposed to be updated
@@ -459,53 +469,49 @@ pub fn get_cargo_workspace(workspace: Workspace) -> Arc<PathBuf> {
         Workspace::DetectWithCargo(manifest_dir) => manifest_dir,
     };
 
-    let error_message = || {
-        format!(
-            "`cargo metadata --format-version=1 --no-deps` in path `{}`",
-            manifest_dir
-        )
-    };
-
     WORKSPACES
         .lock()
         // we really do not care about poisoning here.
         .unwrap()
         .entry(manifest_dir.to_string())
         .or_insert_with(|| {
-            let output = std::process::Command::new(
-                env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()),
-            )
-            .args(["metadata", "--format-version=1", "--no-deps"])
-            .current_dir(manifest_dir)
-            .output()
-            .unwrap_or_else(|e| panic!("failed to run {}\n\n{}", error_message(), e));
-
-            crate::content::yaml::vendored::yaml::YamlLoader::load_from_str(
-                std::str::from_utf8(&output.stdout).unwrap(),
-            )
-            .map_err(|e| e.to_string())
-            .and_then(|docs| {
-                docs.into_iter()
-                    .next()
-                    .ok_or_else(|| "No content found in yaml".to_string())
-            })
-            .and_then(|metadata| {
-                metadata["workspace_root"]
-                    .clone()
-                    .into_string()
-                    .ok_or_else(|| "Couldn't find `workspace_root`".to_string())
-            })
-            .map(|path| PathBuf::from(path).into())
-            .unwrap_or_else(|e| {
-                panic!(
-                    "failed to parse cargo metadata output from {}: {}\n\n{:?}",
-                    error_message(),
-                    e,
-                    output.stdout
-                )
+            get_cargo_workspace_from_metadata(manifest_dir).unwrap_or_else(|e| {
+                eprintln!("cargo metadata failed in {manifest_dir}: {e}");
+                eprintln!("will use manifest directory as fallback");
+                Arc::new(PathBuf::from(manifest_dir))
             })
         })
         .clone()
+}
+
+fn get_cargo_workspace_from_metadata(
+    manifest_dir: &str,
+) -> Result<Arc<PathBuf>, Box<dyn std::error::Error>> {
+    let output =
+        std::process::Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()))
+            .args(["metadata", "--format-version=1", "--no-deps"])
+            .current_dir(manifest_dir)
+            .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("command failed with {}: {stderr}", output.status).into());
+    }
+
+    let stdout =
+        std::str::from_utf8(&output.stdout).map_err(|e| format!("invalid UTF-8 in output: {e}"))?;
+
+    let docs = crate::content::yaml::vendored::yaml::YamlLoader::load_from_str(stdout)
+        .map_err(|e| format!("failed to parse YAML: {e}"))?;
+
+    let metadata = docs.into_iter().next().ok_or("no content found in YAML")?;
+
+    let workspace_root = metadata["workspace_root"]
+        .clone()
+        .into_string()
+        .ok_or("couldn't find 'workspace_root' in metadata")?;
+
+    Ok(Arc::new(workspace_root.into()))
 }
 
 #[test]
@@ -565,6 +571,103 @@ pub fn memoize_snapshot_file(snapshot_file: &Path) {
             .unwrap();
         f.write_all(format!("{}\n", snapshot_file.display()).as_bytes())
             .unwrap();
+    }
+}
+
+/// Appends a warning to the warnings file for cargo-insta to display after tests.
+/// Best-effort: does nothing if `INSTA_WARNINGS_FILE` is not set or IO fails.
+pub fn memoize_warning(message: &str) {
+    if let Ok(path) = env::var("INSTA_WARNINGS_FILE") {
+        if let Ok(mut f) = fs::OpenOptions::new().append(true).create(true).open(path) {
+            let _ = writeln!(f, "{}", message);
+        }
+    }
+}
+
+/// Returns the pending directory if `INSTA_PENDING_DIR` is set and non-empty.
+pub fn get_pending_dir() -> Option<PathBuf> {
+    env::var("INSTA_PENDING_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Tries to strip a prefix from a path, with optional normalization fallback.
+///
+/// First attempts direct `strip_prefix` (preserves symlinks, works for Bazel).
+/// If that fails, tries normalizing both paths with `canonicalize()` and
+/// retrying (handles Windows path format differences like `\\?\` prefix).
+fn strip_prefix_with_fallback<'a>(
+    path: &'a Path,
+    prefix: &Path,
+) -> Result<std::borrow::Cow<'a, Path>, std::path::StripPrefixError> {
+    // Try direct strip_prefix first. This preserves symlinks which is
+    // essential for Bazel's execroot setup where paths are symlinks.
+    if let Ok(relative) = path.strip_prefix(prefix) {
+        return Ok(std::borrow::Cow::Borrowed(relative));
+    }
+
+    // Fallback: normalize both paths with canonicalize() and try again.
+    // This handles Windows path format differences (e.g., `\\?\` prefix,
+    // 8.3 short names). On Unix, canonicalize() follows symlinks, so we
+    // only reach here if direct strip failed (likely not a symlink case).
+    if let (Ok(normalized_path), Ok(normalized_prefix)) =
+        (path.canonicalize(), prefix.canonicalize())
+    {
+        if let Ok(relative) = normalized_path.strip_prefix(&normalized_prefix) {
+            return Ok(std::borrow::Cow::Owned(relative.to_path_buf()));
+        }
+    }
+
+    // Return the original error
+    path.strip_prefix(prefix).map(std::borrow::Cow::Borrowed)
+}
+
+/// Computes the path for a pending snapshot file.
+///
+/// If `INSTA_PENDING_DIR` is set, returns a path within that directory
+/// preserving the relative structure from the workspace. Otherwise returns
+/// the original path unchanged.
+///
+/// # Panics
+///
+/// Panics if `INSTA_PENDING_DIR` is set but the snapshot path is outside the
+/// workspace (e.g., external test paths like `../tests/lib.rs`). This is because
+/// such paths would escape the pending directory.
+pub fn pending_snapshot_path(workspace: &Path, original_path: &Path) -> PathBuf {
+    match get_pending_dir() {
+        Some(pending_dir) => {
+            // Compute relative path from workspace to original_path.
+            // Try direct strip first (for Bazel), fall back to normalized (for Windows).
+            let relative =
+                strip_prefix_with_fallback(original_path, workspace).unwrap_or_else(|_| {
+                    panic!(
+                        "INSTA_PENDING_DIR is set but snapshot path {:?} is outside \
+                         workspace {:?}. External test paths (e.g., path = \"../tests/lib.rs\" \
+                         in Cargo.toml) are not compatible with INSTA_PENDING_DIR because \
+                         the relative path would escape the pending directory.",
+                        original_path, workspace
+                    );
+                });
+
+            // Check if the relative path contains ".." which would escape
+            // the pending directory. This happens with external test paths
+            // like `path = "../tests/lib.rs"` in Cargo.toml.
+            if relative
+                .components()
+                .any(|c| c == std::path::Component::ParentDir)
+            {
+                panic!(
+                    "INSTA_PENDING_DIR is set but snapshot path {:?} would escape \
+                     the pending directory (relative path contains \"..\"). \
+                     External test paths (e.g., path = \"../tests/lib.rs\" in Cargo.toml) \
+                     are not compatible with INSTA_PENDING_DIR.",
+                    original_path
+                );
+            }
+            pending_dir.join(relative)
+        }
+        None => original_path.to_path_buf(),
     }
 }
 

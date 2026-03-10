@@ -1,16 +1,16 @@
 # Schemars
 
-> [!NOTE]
-> Schemars 1.0 is in development on [the v1 branch](https://github.com/GREsau/schemars/tree/v1), see [draft PR 290](https://github.com/GREsau/schemars/pull/290) for updates
-
 [![CI Build](https://img.shields.io/github/actions/workflow/status/GREsau/schemars/ci.yml?branch=master&logo=GitHub)](https://github.com/GREsau/schemars/actions)
 [![Crates.io](https://img.shields.io/crates/v/schemars)](https://crates.io/crates/schemars)
-[![Docs](https://docs.rs/schemars/badge.svg)](https://docs.rs/schemars)
-[![MSRV 1.60+](https://img.shields.io/badge/schemars-rustc_1.60+-lightgray.svg)](https://blog.rust-lang.org/2022/04/07/Rust-1.60.0.html)
+[![API Docs](https://img.shields.io/docsrs/schemars/latest?label=API%20docs)](https://docs.rs/schemars/latest)
+[![Usage Docs](https://img.shields.io/badge/Usage%20docs-graham.cool%2Fschemars-blue)](https://graham.cool/schemars)
+[![MSRV 1.74+](https://img.shields.io/badge/msrv-1.74-blue)](https://blog.rust-lang.org/2023/11/16/Rust-1.74.0/)
 
 Generate JSON Schema documents from Rust code
 
 ## Basic Usage
+
+_For more detailed information, see the full [API documentation on docs.rs](https://docs.rs/schemars/latest), and the [detailed usage documentation website](https://graham.cool/schemars)._
 
 If you don't really care about the specifics, the easiest way to generate a JSON schema for your types is to `#[derive(JsonSchema)]` and use the `schema_for!` macro. All fields of the type must also implement `JsonSchema` - Schemars implements this for many standard library types.
 
@@ -39,10 +39,9 @@ println!("{}", serde_json::to_string_pretty(&schema).unwrap());
 
 ```json
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "MyStruct",
   "type": "object",
-  "required": ["my_bool", "my_int"],
   "properties": {
     "my_bool": {
       "type": "boolean"
@@ -54,7 +53,7 @@ println!("{}", serde_json::to_string_pretty(&schema).unwrap());
     "my_nullable_enum": {
       "anyOf": [
         {
-          "$ref": "#/definitions/MyEnum"
+          "$ref": "#/$defs/MyEnum"
         },
         {
           "type": "null"
@@ -62,26 +61,25 @@ println!("{}", serde_json::to_string_pretty(&schema).unwrap());
       ]
     }
   },
-  "definitions": {
+  "required": ["my_int", "my_bool"],
+  "$defs": {
     "MyEnum": {
-      "anyOf": [
+      "oneOf": [
         {
           "type": "object",
-          "required": ["StringNewType"],
           "properties": {
             "StringNewType": {
               "type": "string"
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "required": ["StringNewType"]
         },
         {
           "type": "object",
-          "required": ["StructVariant"],
           "properties": {
             "StructVariant": {
               "type": "object",
-              "required": ["floats"],
               "properties": {
                 "floats": {
                   "type": "array",
@@ -90,10 +88,12 @@ println!("{}", serde_json::to_string_pretty(&schema).unwrap());
                     "format": "float"
                   }
                 }
-              }
+              },
+              "required": ["floats"]
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "required": ["StructVariant"]
         }
       ]
     }
@@ -137,24 +137,23 @@ println!("{}", serde_json::to_string_pretty(&schema).unwrap());
 
 ```json
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "MyStruct",
   "type": "object",
-  "required": ["myBool", "myNumber"],
   "properties": {
     "myBool": {
       "type": "boolean"
     },
     "myNullableEnum": {
-      "default": null,
       "anyOf": [
         {
-          "$ref": "#/definitions/MyEnum"
+          "$ref": "#/$defs/MyEnum"
         },
         {
           "type": "null"
         }
-      ]
+      ],
+      "default": null
     },
     "myNumber": {
       "type": "integer",
@@ -162,7 +161,8 @@ println!("{}", serde_json::to_string_pretty(&schema).unwrap());
     }
   },
   "additionalProperties": false,
-  "definitions": {
+  "required": ["myNumber", "myBool"],
+  "$defs": {
     "MyEnum": {
       "anyOf": [
         {
@@ -170,7 +170,6 @@ println!("{}", serde_json::to_string_pretty(&schema).unwrap());
         },
         {
           "type": "object",
-          "required": ["floats"],
           "properties": {
             "floats": {
               "type": "array",
@@ -179,7 +178,8 @@ println!("{}", serde_json::to_string_pretty(&schema).unwrap());
                 "format": "float"
               }
             }
-          }
+          },
+          "required": ["floats"]
         }
       ]
     }
@@ -251,36 +251,45 @@ println!("{}", serde_json::to_string_pretty(&schema).unwrap());
 
 </details>
 
+## Versioning and Stability
+
+Schemars follows semantic versioning, with the following caveats:
+
+- Increasing MSRV (Minimum Supported Rust Version) is considered a semver-minor change. Schemars aims to support the past year of stable rust versions, but this is not guaranteed.
+- External libraries that are supported via optional dependencies (see [Feature Flags](#feature-flags)) _may_ be removed in a minor version change, particularly if a newer semver-incompatible version has been released for a long time.
+- The exact structure of generated schemas (both for built-in implementations on standard library types, and for `#[derive(JsonSchema)]` implementations) may change between versions of schemars - this is not considered a breaking change.
+- Exported items that are marked with `#[doc(hidden)]` and have names beginning with `_` are not part of the public API, and may be changed or removed without notice.
+- If a bug is found in schemars that causes attributes to be incorrectly processed or silently ignored by `#[derive(JsonSchema)]`, a subsequent version of schemars may instead fail compilation when encountering such attributes. This is considered a bug fix, and not a breaking change.
+
 ## Feature Flags
 
+- `std` (enabled by default) - implements `JsonSchema` for types in the rust standard library (`JsonSchema` is still implemented on types in `core` and `alloc`, even when this feature is disabled). Disable this feature to use schemars in `no_std` environments.
 - `derive` (enabled by default) - provides `#[derive(JsonSchema)]` macro
-- `impl_json_schema` - implements `JsonSchema` for Schemars types themselves
-- `preserve_order` - keep the order of struct fields in `Schema` and `SchemaObject`
+- `preserve_order` - keep the order of struct fields in `Schema` properties
 - `raw_value` - implements `JsonSchema` for `serde_json::value::RawValue` (enables the serde_json `raw_value` feature)
 
 Schemars can implement `JsonSchema` on types from several popular crates, enabled via feature flags (dependency versions are shown in brackets):
 
-- `chrono` - [chrono](https://crates.io/crates/chrono) (^0.4)
-- `indexmap1` - [indexmap](https://crates.io/crates/indexmap) (^1.2)
-- `indexmap2` - [indexmap](https://crates.io/crates/indexmap) (^2.0)
-- `either` - [either](https://crates.io/crates/either) (^1.3)
-- `uuid08` - [uuid](https://crates.io/crates/uuid) (^0.8)
-- `uuid1` - [uuid](https://crates.io/crates/uuid) (^1.0)
-- `smallvec` - [smallvec](https://crates.io/crates/smallvec) (^1.0)
-- `arrayvec05` - [arrayvec](https://crates.io/crates/arrayvec) (^0.5)
 - `arrayvec07` - [arrayvec](https://crates.io/crates/arrayvec) (^0.7)
-- `url` - [url](https://crates.io/crates/url) (^2.0)
-- `bytes` - [bytes](https://crates.io/crates/bytes) (^1.0)
-- `enumset` - [enumset](https://crates.io/crates/enumset) (^1.0)
-- `rust_decimal` - [rust_decimal](https://crates.io/crates/rust_decimal) (^1.0)
-- `bigdecimal03` - [bigdecimal](https://crates.io/crates/bigdecimal) (^0.3)
 - `bigdecimal04` - [bigdecimal](https://crates.io/crates/bigdecimal) (^0.4)
-- `smol_str` - [smol_str](https://crates.io/crates/smol_str) (^0.1.17)
-- `semver` - [semver](https://crates.io/crates/semver) (^1.0.9)
+- `bytes1` - [bytes](https://crates.io/crates/bytes) (^1.0)
+- `chrono04` - [chrono](https://crates.io/crates/chrono) (^0.4)
+- `either1` - [either](https://crates.io/crates/either) (^1.3)
+- `indexmap2` - [indexmap](https://crates.io/crates/indexmap) (^2.0)
+- `jiff02` - [jiff](https://crates.io/crates/jiff) (^0.2)
+- `rust_decimal1` - [rust_decimal](https://crates.io/crates/rust_decimal) (^1.0)
+- `semver1` - [semver](https://crates.io/crates/semver) (^1.0.9)
+- `smallvec1` - [smallvec](https://crates.io/crates/smallvec) (^1.0)
+- `smol_str02` - [smol_str](https://crates.io/crates/smol_str) (^0.2.1)
+- `smol_str03` - [smol_str](https://crates.io/crates/smol_str) (^0.3)
+- `url2` - [url](https://crates.io/crates/url) (^2.0)
+- `uuid1` - [uuid](https://crates.io/crates/uuid) (^1.0)
+
+Bear in mind that each of these feature flags _may_ be removed in a future semver-minor change of Schemars, particularly if a newer semver-incompatible version of the external library has been released for a long time. This is unfortunately necessary to avoid supporting old/unmaintained libraries indefinitely.
 
 For example, to implement `JsonSchema` on types from `chrono`, enable it as a feature in the `schemars` dependency in your `Cargo.toml` like so:
 
 ```toml
 [dependencies]
-schemars = { version = "0.8", features = ["chrono"] }
+schemars = { version = "1.0", features = ["chrono04"] }
 ```

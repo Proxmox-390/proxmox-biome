@@ -33,19 +33,20 @@ use crate::Error;
 
 use super::resolver::{ResolvedSocketAddrs, Resolver};
 
-pub use self::tcp::TcpConnector;
-use self::time::Instant;
-
 mod buf;
 pub use buf::{Buffers, LazyBuffers};
 
 mod tcp;
+pub use self::tcp::TcpConnector;
 
 mod io;
 pub use io::TransportAdapter;
 
 mod chain;
 pub use chain::{ChainedConnector, Either};
+
+mod connect;
+pub use connect::ConnectProxyConnector;
 
 #[cfg(feature = "_test")]
 mod test;
@@ -57,8 +58,6 @@ mod socks;
 #[cfg(feature = "socks-proxy")]
 pub use self::socks::SocksConnector;
 
-pub use crate::proxy::ConnectProxyConnector;
-
 #[cfg(feature = "_rustls")]
 pub use crate::tls::rustls::RustlsConnector;
 
@@ -66,6 +65,7 @@ pub use crate::tls::rustls::RustlsConnector;
 pub use crate::tls::native_tls::NativeTlsConnector;
 
 pub mod time;
+use self::time::Instant;
 
 pub use crate::timings::NextTimeout;
 
@@ -189,7 +189,8 @@ pub struct ConnectionDetails<'a> {
 
     /// The resolved IP address + port for the uri being requested. See [`Resolver`].
     ///
-    /// For CONNECT proxy, this is the address of the proxy server.
+    /// For proxies, whetherh this holds real addresses depends on
+    /// [`Proxy::resolve_target()`](crate::Proxy::resolve_target).
     pub addrs: ResolvedSocketAddrs,
 
     /// The configuration.
@@ -424,7 +425,7 @@ mod no_proxy {
         ) -> Result<Option<Self::Out>, Error> {
             if chained.is_none() {
                 if let Some(proxy) = details.config.proxy() {
-                    if proxy.proto().is_socks() {
+                    if proxy.protocol().is_socks() {
                         if proxy.is_from_env() {
                             warn!(
                                 "Enable feature socks-proxy to use proxy

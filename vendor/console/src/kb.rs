@@ -1,9 +1,11 @@
+use alloc::vec::Vec;
+
 /// Key mapping
 ///
 /// This is an incomplete mapping of keys that are supported for reading
 /// from the keyboard.
 #[non_exhaustive]
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub enum Key {
     Unknown,
     /// Unrecognized sequence containing Esc and a list of chars
@@ -26,4 +28,5 @@ pub enum Key {
     PageUp,
     PageDown,
     Char(char),
+    CtrlC,
 }

@@ -303,7 +303,7 @@ impl EventLoop {
                 .into_iter()
             {
                 let entry = entry.map_err(map_walkdir_error)?;
-                self.add_single_watch(entry.path().to_path_buf(), is_recursive)?;
+                self.add_single_watch(entry.into_path(), is_recursive)?;
             }
         }
 
@@ -342,21 +342,22 @@ impl EventLoop {
         match self.watches.remove(&path) {
             None => return Err(Error::watch_not_found()),
             Some(is_recursive) => {
-                self.kqueue
-                    .remove_filename(&path, EventFilter::EVFILT_VNODE)
-                    .map_err(|e| Error::io(e).add_path(path.clone()))?;
-
                 if is_recursive || remove_recursive {
                     for entry in WalkDir::new(path)
                         .follow_links(self.follow_symlinks)
                         .into_iter()
                     {
-                        let p = entry.map_err(map_walkdir_error)?.path().to_path_buf();
+                        let p = entry.map_err(map_walkdir_error)?.into_path();
                         self.kqueue
                             .remove_filename(&p, EventFilter::EVFILT_VNODE)
                             .map_err(|e| Error::io(e).add_path(p))?;
                     }
+                } else {
+                    self.kqueue
+                        .remove_filename(&path, EventFilter::EVFILT_VNODE)
+                        .map_err(|e| Error::io(e).add_path(path.clone()))?;
                 }
+
                 self.kqueue.watch()?;
             }
         }
@@ -453,5 +454,28 @@ impl Drop for KqueueWatcher {
         // we expect the event loop to live => unwrap must not panic
         self.channel.send(EventLoopMsg::Shutdown).unwrap();
         self.waker.wake().unwrap();
+    }
+}
+
+mod tests {
+    use super::{Config, KqueueWatcher, RecursiveMode};
+    use crate::Watcher;
+    use std::error::Error;
+    use std::path::PathBuf;
+    use std::result::Result;
+
+    #[test]
+    fn test_remove_recursive() -> Result<(), Box<dyn Error>> {
+        let path = PathBuf::from("src");
+
+        let mut watcher = KqueueWatcher::new(|event| println!("{:?}", event), Config::default())?;
+        watcher.watch(&path, RecursiveMode::Recursive)?;
+        let result = watcher.unwatch(&path);
+        assert!(
+            result.is_ok(),
+            "unwatch yielded error: {}",
+            result.unwrap_err()
+        );
+        Ok(())
     }
 }

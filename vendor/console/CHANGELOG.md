@@ -1,5 +1,39 @@
 # Changelog
 
+Newer changelog entries can be found [on
+GitHub](https://github.com/console-rs/console/releases).
+
+## 0.15.8
+
+### Enhancements
+
+* Added `wasm32-unknown-emscripten` target. (#179)
+* `read_line_initial_text` now retains the initial prefix. (#190)
+* Reading raw input now traps Ctrl+C. (#189)
+
+### Bugfixes
+
+* Properly use configured output of `Term` to get terminal size (#186)
+* Aligned `read_line` and `read_line_initial_text`'s behavior. (#181)
+* Fixed soundness issue in `msys_tty_on`. (#183)
+
+## 0.15.7
+
+### Enhancements
+
+* Set an appropriate lower version of libc for macos changes.
+* Improved behavior of `read_single_key` so it does not disturb other
+  threads quite as much. (#165)
+* More reliably reset raw mode in terminal. (#171)
+
+## 0.15.6
+
+### Enhancements
+
+* Switch to `select()` on macOS for polling on TTYs to work around
+  a macOS bug. (#169)
+* Added blink fast and strikethrough attributes. (#159)
+
 ## 0.15.5
 
 ### Enhancements

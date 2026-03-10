@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "mimalloc"
-version = "0.1.47"
+version = "0.1.48"
 authors = [
     "Octavian Oncescu <octavonce@gmail.com>",
     "Vincent Rouillé <vincent@speedy37.fr>",
@@ -44,7 +44,7 @@ name = "mimalloc"
 path = "src/lib.rs"
 
 [dependencies.libmimalloc-sys]
-version = "0.1.43"
+version = "0.1.44"
 default-features = false
 
 [features]
@@ -56,6 +56,7 @@ local_dynamic_tls = ["libmimalloc-sys/local_dynamic_tls"]
 no_thp = ["libmimalloc-sys/no_thp"]
 override = ["libmimalloc-sys/override"]
 secure = ["libmimalloc-sys/secure"]
+v3 = ["libmimalloc-sys/v3"]
 
 [badges.travis-ci]
 repository = "purpleprotocol/mimalloc_rust"

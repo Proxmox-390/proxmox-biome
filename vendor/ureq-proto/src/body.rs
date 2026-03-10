@@ -54,8 +54,21 @@ impl BodyWriter {
         }
     }
 
+    #[cfg(feature = "server")]
+    pub fn body_mode(&self) -> BodyMode {
+        match self.mode {
+            SenderMode::None => BodyMode::NoBody,
+            SenderMode::Sized(n) => BodyMode::LengthDelimited(n),
+            SenderMode::Chunked => BodyMode::Chunked,
+        }
+    }
+
     pub fn has_body(&self) -> bool {
-        matches!(self.mode, SenderMode::Sized(_) | SenderMode::Chunked)
+        match self.mode {
+            SenderMode::Sized(n) => n > 0,
+            SenderMode::Chunked => true,
+            SenderMode::None => false,
+        }
     }
 
     pub fn is_chunked(&self) -> bool {
@@ -173,14 +186,10 @@ pub(crate) fn calculate_max_input(output_len: usize) -> usize {
     let chunks = output_len / DEFAULT_CHUNK_AND_OVERHEAD;
     let remaining = output_len % DEFAULT_CHUNK_AND_OVERHEAD;
 
-    let tail = if remaining <= DEFAULT_CHUNK_OVERHEAD {
-        0
-    } else {
-        // We can safely assume remaining is < DEFAULT_CHUNK_AND_OVERHEAD which requires
-        // DEFAULT_CHUNK_HEX number of chars to write. Thus whatever the remaining length is,
-        // it will fit into DEFAULT_CHUNK_HEX + 4 (for the \r\n overhead)
-        remaining - DEFAULT_CHUNK_OVERHEAD
-    };
+    // We can safely assume remaining is < DEFAULT_CHUNK_AND_OVERHEAD which requires
+    // DEFAULT_CHUNK_HEX number of chars to write. Thus whatever the remaining length is,
+    // it will fit into DEFAULT_CHUNK_HEX + 4 (for the \r\n overhead)
+    let tail = remaining.saturating_sub(DEFAULT_CHUNK_OVERHEAD);
 
     chunks * DEFAULT_CHUNK_SIZE + tail
 }
@@ -267,13 +276,12 @@ impl BodyReader {
     pub fn for_request<'a>(
         http10: bool,
         method: &Method,
+        force_send: bool,
         header_lookup: &'a dyn Fn(http::HeaderName) -> Option<&'a str>,
     ) -> Result<Self, Error> {
         use crate::ext::MethodExt;
 
-        let is_head = method == Method::HEAD;
-
-        if is_head {
+        if !method.allow_request_body() && !force_send {
             return Ok(Self::NoBody);
         }
 
@@ -289,47 +297,34 @@ impl BodyReader {
     }
 
     #[cfg(feature = "client")]
+    // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
     pub fn for_response<'a>(
         http10: bool,
         method: &Method,
         status_code: u16,
+        force_recv: bool,
         header_lookup: &'a dyn Fn(HeaderName) -> Option<&'a str>,
     ) -> Result<Self, Error> {
-        let is_success = (200..=299).contains(&status_code);
-        let is_informational = (100..=199).contains(&status_code);
-        let is_redirect = (300..=399).contains(&status_code) && status_code != 304;
-
         let header_defined =
             Self::header_defined(http10, header_lookup)?.unwrap_or(Self::CloseDelimited);
 
-        // Implicitly we know that CloseDelimited means no header indicated that
-        // there was a body.
-        let has_body_header = header_defined != Self::CloseDelimited;
+        // Is body mode being defined in headers?
+        let body_mode_defined = header_defined.body_mode() != BodyMode::CloseDelimited;
 
-        let has_no_body =
-            // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
-            // All responses to the HEAD request method
-            // MUST NOT include a message-body, even though the presence of entity-
-            // header fields might lead one to believe they do.
-            method == Method::HEAD ||
-            // A client MUST ignore any Content-Length or Transfer-Encoding
-            // header fields received in a successful response to CONNECT.
-            is_success && method == Method::CONNECT ||
-            // All 1xx (informational), 204 (no content), and 304 (not modified) responses
-            // MUST NOT include a message-body.
-            is_informational ||
-            matches!(status_code, 204 | 304) ||
-            // Surprisingly, redirects may have a body. Whether they do we need to
-            // check the existence of content-length or transfer-encoding headers.
-            is_redirect && !has_body_header;
+        // Are we allowed to receive a body?
+        let body_allowed = response_body_allowed(method, status_code, header_defined.body_mode());
 
-        if has_no_body {
-            return Ok(Self::NoBody);
+        if body_mode_defined && (body_allowed || force_recv) {
+            // Response contains a body header (even Content-Length: 0)
+            // and expects a body or is forcing a body.
+            Ok(header_defined)
+        } else if !body_mode_defined && body_allowed {
+            // Response has no body header but a body might follow.
+            // Assume close-delimited body.
+            Ok(header_defined)
+        } else {
+            Ok(Self::NoBody)
         }
-
-        // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
-        // All other responses do include a message-body, although it MAY be of zero length.
-        Ok(header_defined)
     }
 
     fn header_defined<'a>(
@@ -373,6 +368,9 @@ impl BodyReader {
         Ok(None)
     }
 
+    /// A request is allowed to have a body based solely upon it's method. A response,
+    /// however, requires a number of factors to be examined. This function checks these
+    /// factors.
     pub fn read(
         &mut self,
         src: &[u8],
@@ -464,6 +462,14 @@ impl BodyReader {
         }
     }
 
+    #[cfg(feature = "client")]
+    pub fn is_ended_chunked(&self) -> bool {
+        match self {
+            BodyReader::Chunked(v) => v.is_ending() || v.is_ended(),
+            _ => false,
+        }
+    }
+
     pub(crate) fn is_on_chunk_boundary(&self) -> bool {
         match self {
             BodyReader::NoBody => false,
@@ -473,6 +479,37 @@ impl BodyReader {
             BodyReader::CloseDelimited => false,
         }
     }
+}
+
+/// A request is allowed to have a body based solely upon it's method. A response,
+/// however, requires a number of factors to be examined. This function checks these
+/// factors.
+pub fn response_body_allowed(method: &Method, status_code: u16, body_mode: BodyMode) -> bool {
+    let is_success = (200..=299).contains(&status_code);
+    let is_informational = (100..=199).contains(&status_code);
+    let is_redirect = (300..=399).contains(&status_code) && status_code != 304;
+
+    // Implicitly we know that CloseDelimited means no header indicated that
+    // there was a body.
+    let has_body_header = body_mode != BodyMode::CloseDelimited;
+
+    // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
+    // All responses to the HEAD request method
+    // MUST NOT include a message-body, even though the presence of entity-
+    // header fields might lead one to believe they do.
+    let body_not_allowed = method == Method::HEAD ||
+            // A client MUST ignore any Content-Length or Transfer-Encoding
+            // header fields received in a successful response to CONNECT.
+            is_success && method == Method::CONNECT ||
+            // All 1xx (informational), 204 (no content), and 304 (not modified) responses
+            // MUST NOT include a message-body.
+            is_informational ||
+            matches!(status_code, 204 | 304) ||
+            // Surprisingly, redirects may have a body. Whether they do we need to
+            // check the existence of content-length or transfer-encoding headers.
+            is_redirect && !has_body_header;
+
+    !body_not_allowed
 }
 
 impl fmt::Debug for BodyReader {

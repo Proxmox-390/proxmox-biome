@@ -3,6 +3,7 @@
 [![CI][ci-badge]][ci-url]
 [![Crates.io][crates-badge]][crates-url]
 [![Documentation][docs-badge]][docs-url]
+[![Matrix room at #tower-lsp:wiro.world][matrix-badge]][matrix-url]
 
 [ci-badge]: https://github.com/tower-lsp-community/tower-lsp-server/actions/workflows/rust.yml/badge.svg?branch=main
 [ci-url]: https://github.com/tower-lsp-community/tower-lsp-server/actions
@@ -10,6 +11,8 @@
 [crates-url]: https://crates.io/crates/tower-lsp-server
 [docs-badge]: https://docs.rs/tower-lsp-server/badge.svg
 [docs-url]: https://docs.rs/tower-lsp-server
+[matrix-badge]: https://img.shields.io/badge/Matrix-%23tower--lsp%3Awiro.world-white?logo=matrix
+[matrix-url]: https://matrix.to/#/#tower-lsp:wiro.world
 
 *A community fork of [tower-lsp](https://github.com/ebkalderon/tower-lsp)*
 
@@ -51,7 +54,7 @@ You can check LSP specification coverage in [`FEATURE.md`](https://github.com/to
 
 ```rust
 use tower_lsp_server::jsonrpc::Result;
-use tower_lsp_server::lsp_types::*;
+use tower_lsp_server::ls_types::*;
 use tower_lsp_server::{Client, LanguageServer, LspService, Server};
 
 #[derive(Debug)]
@@ -104,12 +107,16 @@ You can use enable proposed features in the [LSP Specification version 3.18](htt
 
 # Projects using `tower-lsp-server`
 
+- [Biome](https://github.com/biomejs/biome)
+- [Oxc](https://github.com/oxc-project/oxc)
 - [Harper](https://github.com/Automattic/harper)
 - [Polarity](https://github.com/polarity-lang/polarity/): both for their language server and their [interactive web demo](https://polarity-lang.github.io).
 - [Deno](https://github.com/denoland/deno/tree/main/cli/lsp) (still uses the original project)
 - [Turborepo](https://github.com/vercel/turborepo/tree/main/crates/turborepo-lsp) (still uses the original project)
 - [Veryl](https://github.com/veryl-lang/veryl)
 - [django-language-server](https://github.com/joshuadavidthomas/django-language-server)
+- [SystemD-LSP](https://github.com/JFryy/systemd-lsp)
+- [Amber LSP](https://github.com/amber-lang/amber-lsp)
 
 # Ecosystem
 

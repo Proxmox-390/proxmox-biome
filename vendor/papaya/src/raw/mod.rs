@@ -119,7 +119,7 @@ pub enum RawInsertResult<'g, K, V> {
 }
 
 // An entry in the hash-table.
-#[repr(C)]
+#[repr(C, align(8))] // Reserve the lower 3 bits for pointer tagging.
 pub struct Entry<K, V> {
     /// The key for this entry.
     pub key: K,

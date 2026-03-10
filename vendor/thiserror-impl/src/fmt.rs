@@ -1,5 +1,6 @@
 use crate::ast::{ContainerKind, Field};
 use crate::attr::{Display, Trait};
+use crate::private;
 use crate::scan_expr::scan_expr;
 use crate::unraw::{IdentUnraw, MemberUnraw};
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
@@ -107,12 +108,14 @@ impl Display<'_> {
                 }
             };
             infinite_recursive |= member == *"self" && bound == Trait::Display;
-            if let Some(&field) = member_index.get(&member) {
-                implied_bounds.insert((field, bound));
-            } else {
-                out += &member.to_string();
-                continue;
-            }
+            let field = match member_index.get(&member) {
+                Some(&field) => field,
+                None => {
+                    out += &member.to_string();
+                    continue;
+                }
+            };
+            implied_bounds.insert((field, bound));
             let formatvar_prefix = if bonus_display {
                 "__display"
             } else if bound == Trait::Pointer {
@@ -129,19 +132,21 @@ impl Display<'_> {
             while user_named_args.contains(&formatvar) {
                 formatvar = IdentUnraw::new(format_ident!("_{}", formatvar.to_string()));
             }
+            formatvar.set_span(span);
             out += &formatvar.to_string();
             if !macro_named_args.insert(formatvar.clone()) {
                 // Already added to bindings by a previous use.
                 continue;
             }
-            let binding_value = match &member {
+            let mut binding_value = match &member {
                 MemberUnraw::Unnamed(index) => format_ident!("_{}", index),
                 MemberUnraw::Named(ident) => ident.to_local(),
             };
+            binding_value.set_span(span.resolved_at(fields[field].member.span()));
             let wrapped_binding_value = if bonus_display {
                 quote_spanned!(span=> #binding_value.as_display())
             } else if bound == Trait::Pointer {
-                quote!(::thiserror::__private::Var(#binding_value))
+                quote!(::thiserror::#private::Var(#binding_value))
             } else {
                 binding_value.into_token_stream()
             };

@@ -1,6 +1,13 @@
-use tracing::{debug, error, info, instrument, span, warn, Level};
+use tracing::{debug, error, info, span, warn, Level};
 use tracing_subscriber::{layer::SubscriberExt, registry::Registry};
 use tracing_tree::HierarchicalLayer;
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct PrettyPrintMe {
+    value_a: u32,
+    value_b: String,
+}
 
 fn main() {
     let layer = HierarchicalLayer::default()
@@ -47,6 +54,18 @@ fn main() {
         error!("hello");
     });
     drop(peer3);
+    let val = format!(
+        "{:#?}",
+        PrettyPrintMe {
+            value_a: 42,
+            value_b: "hello".into(),
+        }
+    );
+    let peer3 = span!(Level::TRACE, "", val = %val);
+    peer3.in_scope(|| {
+        error!("hello");
+    });
+    drop(peer3);
     let peer1 = span!(Level::TRACE, "conn", peer_addr = "82.9.9.9", port = 42381);
     peer1.in_scope(|| {
         warn!(algo = "xor", "weak encryption requested");
@@ -65,15 +84,4 @@ fn main() {
     drop(peer2);
     warn!("internal error");
     info!("exit");
-}
-
-#[instrument]
-fn call_a(name: &str) {
-    info!(name, "got a name");
-    call_b(name)
-}
-
-#[instrument]
-fn call_b(name: &str) {
-    info!(name, "got a name");
 }

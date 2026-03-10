@@ -1,32 +1,23 @@
 #![forbid(unsafe_code)]
+#![deny(
+    missing_docs,
+    unused_imports,
+    clippy::cargo,
+    clippy::pedantic,
+    clippy::exhaustive_structs,
+    clippy::exhaustive_enums
+)]
+#![allow(clippy::wildcard_imports, clippy::missing_errors_doc)]
 #![doc = include_str!("../README.md")]
+#![no_std]
 
-/// The map type used by schemars types.
-///
-/// Currently a `BTreeMap` or `IndexMap` can be used, but this may change to a different implementation
-/// with a similar interface in a future version of schemars.
-/// The `IndexMap` will be used when the `preserve_order` feature flag is set.
-#[cfg(not(feature = "preserve_order"))]
-pub type Map<K, V> = std::collections::BTreeMap<K, V>;
-#[cfg(feature = "preserve_order")]
-pub type Map<K, V> = indexmap::IndexMap<K, V>;
-/// The set type used by schemars types.
-///
-/// Currently a `BTreeSet`, but this may change to a different implementation
-/// with a similar interface in a future version of schemars.
-pub type Set<T> = std::collections::BTreeSet<T>;
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
-/// A view into a single entry in a map, which may either be vacant or occupied.
-//
-/// This is constructed from the `entry` method on `BTreeMap` or `IndexMap`,
-/// depending on whether the `preserve_order` feature flag is set.
-#[cfg(not(feature = "preserve_order"))]
-pub type MapEntry<'a, K, V> = std::collections::btree_map::Entry<'a, K, V>;
-#[cfg(feature = "preserve_order")]
-pub type MapEntry<'a, K, V> = indexmap::map::Entry<'a, K, V>;
-
-mod flatten;
+mod encoding;
 mod json_schema_impls;
+mod schema;
 mod ser;
 #[macro_use]
 mod macros;
@@ -34,32 +25,39 @@ mod macros;
 /// This module is only public for use by `schemars_derive`. It should not need to be used by code
 /// outside of `schemars`, and should not be considered part of the public API.
 #[doc(hidden)]
+#[allow(clippy::exhaustive_structs)]
 pub mod _private;
-
-pub mod r#gen;
-pub mod schema;
-pub mod visit;
-
-pub use r#gen::SchemaGenerator;
+pub mod consts;
+pub mod generate;
+pub mod transform;
 
 #[cfg(feature = "schemars_derive")]
 extern crate schemars_derive;
-use std::borrow::Cow;
+use alloc::borrow::Cow;
 
 #[cfg(feature = "schemars_derive")]
 pub use schemars_derive::*;
 
-// Export serde_json so schemars_derive can use it
-#[doc(hidden)]
-pub use serde_json as _serde_json;
+#[doc(inline)]
+pub use generate::SchemaGenerator;
+pub use schema::Schema;
 
-use schema::Schema;
+mod _alloc_prelude {
+    pub use alloc::borrow::ToOwned;
+    pub use alloc::boxed::Box;
+    pub use alloc::format;
+    pub use alloc::string::{String, ToString};
+    pub use alloc::vec;
+    pub use alloc::vec::Vec;
+}
 
 /// A type which can be described as a JSON Schema document.
 ///
 /// This is implemented for many Rust primitive and standard library types.
 ///
-/// This can also be automatically derived on most custom types with `#[derive(JsonSchema)]`.
+/// This can also be automatically derived on most custom types with `#[derive(JsonSchema)]` by
+/// enabling the `derive` feature flag (which is enabled by default).
+/// For more info on deriving `JsonSchema`, see [the derive macro documentation](derive@JsonSchema).
 ///
 /// # Examples
 /// Deriving an implementation:
@@ -78,123 +76,115 @@ use schema::Schema;
 /// you will need to determine an appropriate name and ID for the type.
 /// For non-generic types, the type name/path are suitable for this:
 /// ```
-/// use schemars::{r#gen::SchemaGenerator, schema::Schema, JsonSchema};
+/// use schemars::{SchemaGenerator, Schema, JsonSchema, json_schema};
 /// use std::borrow::Cow;
 ///
 /// struct NonGenericType;
 ///
 /// impl JsonSchema for NonGenericType {
-///     fn schema_name() -> String {
+///     fn schema_name() -> Cow<'static, str> {
 ///         // Exclude the module path to make the name in generated schemas clearer.
-///         "NonGenericType".to_owned()
+///         "NonGenericType".into()
 ///     }
 ///
 ///     fn schema_id() -> Cow<'static, str> {
 ///         // Include the module, in case a type with the same name is in another module/crate
-///         Cow::Borrowed(concat!(module_path!(), "::NonGenericType"))
+///         concat!(module_path!(), "::NonGenericType").into()
 ///     }
 ///
-///     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
-///         todo!()
+///     fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
+///         json_schema!({
+///             "foo": "bar"
+///         })
 ///     }
 /// }
 ///
 /// assert_eq!(NonGenericType::schema_id(), <&mut NonGenericType>::schema_id());
 /// ```
 ///
-/// But generic type parameters which may affect the generated schema should typically be included in the name/ID:
+/// But generic type parameters which may affect the generated schema should typically be included
+/// in the name/ID:
 /// ```
-/// use schemars::{r#gen::SchemaGenerator, schema::Schema, JsonSchema};
+/// use schemars::{SchemaGenerator, Schema, JsonSchema, json_schema};
 /// use std::{borrow::Cow, marker::PhantomData};
 ///
 /// struct GenericType<T>(PhantomData<T>);
 ///
 /// impl<T: JsonSchema> JsonSchema for GenericType<T> {
-///     fn schema_name() -> String {
-///         format!("GenericType_{}", T::schema_name())
+///     fn schema_name() -> Cow<'static, str> {
+///         format!("GenericType_{}", T::schema_name()).into()
 ///     }
 ///
 ///     fn schema_id() -> Cow<'static, str> {
-///         Cow::Owned(format!(
+///         format!(
 ///             "{}::GenericType<{}>",
 ///             module_path!(),
 ///             T::schema_id()
-///         ))
+///         ).into()
 ///     }
 ///
-///     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
-///         todo!()
+///     fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
+///         json_schema!({
+///             "foo": "bar"
+///         })
 ///     }
 /// }
 ///
 /// assert_eq!(<GenericType<i32>>::schema_id(), <&mut GenericType<&i32>>::schema_id());
 /// ```
-///
 pub trait JsonSchema {
-    /// Whether JSON Schemas generated for this type should be re-used where possible using the `$ref` keyword.
+    /// Whether JSON Schemas generated for this type should be included directly in parent schemas,
+    /// rather than being re-used where possible using the `$ref` keyword.
     ///
-    /// For trivial types (such as primitives), this should return `false`. For more complex types, it should return `true`.
-    /// For recursive types, this **must** return `true` to prevent infinite cycles when generating schemas.
+    /// For trivial types (such as primitives), this should return `true`. For more complex types,
+    /// it should return `false`. For recursive types, this **must** return `false` to prevent
+    /// infinite cycles when generating schemas.
     ///
-    /// By default, this returns `true`.
-    fn is_referenceable() -> bool {
-        true
+    /// By default, this returns `false`.
+    #[must_use]
+    fn inline_schema() -> bool {
+        false
     }
 
     /// The name of the generated JSON Schema.
     ///
-    /// This is used as the title for root schemas, and the key within the root's `definitions` property for subschemas.
-    fn schema_name() -> String;
+    /// This is used as the title for root schemas, and the key within the root's `definitions`
+    /// property for subschemas.
+    #[must_use]
+    fn schema_name() -> Cow<'static, str>;
 
     /// Returns a string that uniquely identifies the schema produced by this type.
     ///
-    /// This does not have to be a human-readable string, and the value will not itself be included in generated schemas.
-    /// If two types produce different schemas, then they **must** have different `schema_id()`s,
-    /// but two types that produce identical schemas should *ideally* have the same `schema_id()`.
+    /// This does not have to be a human-readable string, and the value will not itself be included
+    /// in generated schemas. If two types produce different schemas, then they **must** have
+    /// different `schema_id()`s, but two types that produce identical schemas should *ideally*
+    /// have the same `schema_id()`.
     ///
-    /// The default implementation returns the same value as `schema_name()`.
+    /// The default implementation returns the same value as
+    /// [`schema_name()`](JsonSchema::schema_name).
+    #[must_use]
     fn schema_id() -> Cow<'static, str> {
-        Cow::Owned(Self::schema_name())
+        Self::schema_name()
     }
 
     /// Generates a JSON Schema for this type.
     ///
-    /// If the returned schema depends on any [referenceable](JsonSchema::is_referenceable) schemas, then this method will
-    /// add them to the [`SchemaGenerator`](r#gen::SchemaGenerator)'s schema definitions.
+    /// If the returned schema depends on any [non-inlined](JsonSchema::inline_schema)
+    /// schemas, then this method will add them to the [`SchemaGenerator`]'s schema definitions.
     ///
     /// This should not return a `$ref` schema.
-    fn json_schema(generator: &mut r#gen::SchemaGenerator) -> Schema;
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema;
 
     // TODO document and bring into public API?
     #[doc(hidden)]
-    fn _schemars_private_non_optional_json_schema(generator: &mut r#gen::SchemaGenerator) -> Schema {
+    fn _schemars_private_non_optional_json_schema(generator: &mut SchemaGenerator) -> Schema {
         Self::json_schema(generator)
     }
 
     // TODO document and bring into public API?
     #[doc(hidden)]
+    #[must_use]
     fn _schemars_private_is_option() -> bool {
         false
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-
-    pub fn schema_object_for<T: JsonSchema>() -> schema::SchemaObject {
-        schema_object(schema_for::<T>())
-    }
-
-    pub fn schema_for<T: JsonSchema>() -> schema::Schema {
-        let mut generator = r#gen::SchemaGenerator::default();
-        T::json_schema(&mut generator)
-    }
-
-    pub fn schema_object(schema: schema::Schema) -> schema::SchemaObject {
-        match schema {
-            schema::Schema::Object(o) => o,
-            s => panic!("Schema was not an object: {:?}", s),
-        }
     }
 }

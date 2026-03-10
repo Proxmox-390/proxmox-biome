@@ -12,10 +12,6 @@
 //! [`std::clone::Clone`] trait are automatically usable by a `DynClone` trait
 //! object.
 //!
-//! [`DynClone`]: trait.DynClone.html
-//! [`clone_box`]: fn.clone_box.html
-//! [`std::clone::Clone`]: https://doc.rust-lang.org/std/clone/trait.Clone.html
-//!
 //! # Example
 //!
 //! ```
@@ -84,11 +80,18 @@
 //! // and similar for Box<dyn MyTrait + Send>, Box<dyn MyTrait + Sync>, Box<dyn MyTrait + Send + Sync>
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/dyn_clone/1.0.11")]
+#![doc(html_root_url = "https://docs.rs/dyn-clone/1.0.20")]
 #![no_std]
-#![allow(clippy::missing_panics_doc, clippy::ptr_as_ptr)]
+#![allow(
+    clippy::missing_panics_doc,
+    clippy::needless_doctest_main,
+    clippy::ptr_as_ptr
+)]
 
 extern crate alloc;
+
+#[cfg(doc)]
+extern crate core as std;
 
 #[macro_use]
 mod macros;
@@ -96,9 +99,13 @@ mod macros;
 // Not public API.
 #[doc(hidden)]
 pub mod __private {
-    pub use alloc::boxed::Box;
+    #[doc(hidden)]
     pub use core::clone::Clone;
+    #[doc(hidden)]
     pub use core::marker::{Send, Sync};
+
+    #[doc(hidden)]
+    pub type Box<T> = alloc::boxed::Box<T>;
 }
 
 mod sealed {
@@ -112,11 +119,11 @@ mod sealed {
 use crate::sealed::{Private, Sealed};
 use alloc::boxed::Box;
 use alloc::rc::Rc;
+#[cfg(target_has_atomic = "ptr")]
 use alloc::sync::Arc;
+use core::ptr;
 
 /// This trait is implemented by any type that implements [`std::clone::Clone`].
-///
-/// [`std::clone::Clone`]: https://doc.rust-lang.org/std/clone/trait.Clone.html
 pub trait DynClone: Sealed {
     // Not public API
     #[doc(hidden)]
@@ -138,7 +145,7 @@ where
 {
     let mut fat_ptr = t as *const T;
     unsafe {
-        let data_ptr = &mut fat_ptr as *mut *const T as *mut *mut ();
+        let data_ptr = ptr::addr_of_mut!(fat_ptr) as *mut *mut ();
         assert_eq!(*data_ptr as *const (), t as *const T as *const ());
         *data_ptr = <T as DynClone>::__clone_box(t, Private);
     }
@@ -146,6 +153,7 @@ where
 }
 
 /// `&mut Arc<T>`&ensp;&mdash;&blacktriangleright;&ensp;`&mut T`
+#[cfg(target_has_atomic = "ptr")]
 pub fn arc_make_mut<T>(arc: &mut Arc<T>) -> &mut T
 where
     T: ?Sized + DynClone,

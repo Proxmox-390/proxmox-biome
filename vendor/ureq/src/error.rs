@@ -76,7 +76,8 @@ pub enum Error {
     TooManyRedirects,
 
     /// Some error with TLS.
-    #[cfg(feature = "_tls")]
+    // #[cfg(feature = "_tls")] This is deliberately not _tls, because we want to let
+    // bespoke TLS transports use this error code.
     Tls(&'static str),
 
     /// Error in reading PEM certificates/private keys.
@@ -85,7 +86,7 @@ pub enum Error {
     /// Breaking changes in that struct will not be reflected in ureq
     /// major versions.
     #[cfg(feature = "_tls")]
-    Pem(rustls_pemfile::Error),
+    Pem(rustls_pki_types::pem::Error),
 
     /// An error originating in Rustls.
     ///
@@ -150,6 +151,14 @@ pub enum Error {
     #[cfg(feature = "json")]
     Json(serde_json::Error),
 
+    /// Invalid MIME type in multipart form.
+    ///
+    /// *Note:* The wrapped error struct is not considered part of ureq API.
+    /// Breaking changes in that struct will not be reflected in ureq
+    /// major versions.
+    #[cfg(feature = "multipart")]
+    InvalidMimeType(mime_guess::mime::FromStrError),
+
     /// Attempt to connect to a CONNECT proxy failed.
     ConnectProxyFailed(String),
 
@@ -194,7 +203,8 @@ impl Error {
         }
     }
 
-    pub(crate) fn disconnected() -> Error {
+    pub(crate) fn disconnected(reason: &'static str) -> Error {
+        trace!("UnexpectedEof reason: {}", reason);
         io::Error::new(io::ErrorKind::UnexpectedEof, "Peer disconnected").into()
     }
 }
@@ -233,7 +243,6 @@ impl fmt::Display for Error {
                 write!(f, "the response body is larger than request limit: {}", v)
             }
             Error::TooManyRedirects => write!(f, "too many redirects"),
-            #[cfg(feature = "_tls")]
             Error::Tls(v) => write!(f, "{}", v),
             #[cfg(feature = "_tls")]
             Error::Pem(v) => write!(f, "PEM: {:?}", v),
@@ -259,6 +268,8 @@ impl fmt::Display for Error {
             Error::Decompress(x, y) => write!(f, "{} decompression failed: {}", x, y),
             #[cfg(feature = "json")]
             Error::Json(v) => write!(f, "json: {}", v),
+            #[cfg(feature = "multipart")]
+            Error::InvalidMimeType(v) => write!(f, "invalid MIME type: {}", v),
             Error::ConnectProxyFailed(v) => write!(f, "CONNECT proxy failed: {}", v),
             Error::TlsRequired => write!(f, "TLS required, but transport is unsecured"),
             Error::Other(v) => write!(f, "other: {}", v),

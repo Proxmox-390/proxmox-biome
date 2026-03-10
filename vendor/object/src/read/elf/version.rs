@@ -40,6 +40,7 @@ pub struct Version<'data> {
     hash: u32,
     // Used to keep track of valid indices in `VersionTable`.
     valid: bool,
+    file: Option<&'data [u8]>,
 }
 
 impl<'data> Version<'data> {
@@ -51,6 +52,14 @@ impl<'data> Version<'data> {
     /// Return hash of the version name.
     pub fn hash(&self) -> u32 {
         self.hash
+    }
+
+    /// Return the filename of the library containing this version.
+    ///
+    /// This is the `vn_file` field of the associated entry in [`elf::SHT_GNU_VERNEED`].
+    /// or `None` if the version info was parsed from a [`elf::SHT_GNU_VERDEF`] section.
+    pub fn file(&self) -> Option<&'data [u8]> {
+        self.file
     }
 }
 
@@ -128,12 +137,13 @@ impl<'data, Elf: FileHeader> VersionTable<'data, Elf> {
                         name: verdaux.name(endian, strings)?,
                         hash: verdef.vd_hash.get(endian),
                         valid: true,
+                        file: None,
                     };
                 }
             }
         }
         if let Some(mut verneeds) = verneeds {
-            while let Some((_, mut vernauxs)) = verneeds.next()? {
+            while let Some((verneed, mut vernauxs)) = verneeds.next()? {
                 while let Some(vernaux) = vernauxs.next()? {
                     let index = vernaux.vna_other.get(endian) & elf::VERSYM_VERSION;
                     if index <= elf::VER_NDX_GLOBAL {
@@ -144,6 +154,7 @@ impl<'data, Elf: FileHeader> VersionTable<'data, Elf> {
                         name: vernaux.name(endian, strings)?,
                         hash: vernaux.vna_hash.get(endian),
                         valid: true,
+                        file: Some(verneed.file(endian, strings)?),
                     };
                 }
             }
@@ -241,6 +252,14 @@ impl<'data, Elf: FileHeader> VerdefIterator<'data, Elf> {
             return Ok(None);
         }
 
+        let result = self.parse().map(Some);
+        if result.is_err() {
+            self.data = Bytes(&[]);
+        }
+        result
+    }
+
+    fn parse(&mut self) -> Result<(&'data elf::Verdef<Elf::Endian>, VerdauxIterator<'data, Elf>)> {
         let verdef = self
             .data
             .read_at::<elf::Verdef<_>>(0)
@@ -261,7 +280,15 @@ impl<'data, Elf: FileHeader> VerdefIterator<'data, Elf> {
         } else {
             self.data = Bytes(&[]);
         }
-        Ok(Some((verdef, verdaux)))
+        Ok((verdef, verdaux))
+    }
+}
+
+impl<'data, Elf: FileHeader> Iterator for VerdefIterator<'data, Elf> {
+    type Item = Result<(&'data elf::Verdef<Elf::Endian>, VerdauxIterator<'data, Elf>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next().transpose()
     }
 }
 
@@ -288,6 +315,16 @@ impl<'data, Elf: FileHeader> VerdauxIterator<'data, Elf> {
             return Ok(None);
         }
 
+        let result = self.parse().map(Some);
+        if result.is_err() {
+            self.count = 0;
+        } else {
+            self.count -= 1;
+        }
+        result
+    }
+
+    fn parse(&mut self) -> Result<&'data elf::Verdaux<Elf::Endian>> {
         let verdaux = self
             .data
             .read_at::<elf::Verdaux<_>>(0)
@@ -296,8 +333,15 @@ impl<'data, Elf: FileHeader> VerdauxIterator<'data, Elf> {
         self.data
             .skip(verdaux.vda_next.get(self.endian) as usize)
             .read_error("Invalid ELF vda_next")?;
-        self.count -= 1;
-        Ok(Some(verdaux))
+        Ok(verdaux)
+    }
+}
+
+impl<'data, Elf: FileHeader> Iterator for VerdauxIterator<'data, Elf> {
+    type Item = Result<&'data elf::Verdaux<Elf::Endian>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next().transpose()
     }
 }
 
@@ -329,6 +373,19 @@ impl<'data, Elf: FileHeader> VerneedIterator<'data, Elf> {
             return Ok(None);
         }
 
+        let result = self.parse().map(Some);
+        if result.is_err() {
+            self.data = Bytes(&[]);
+        }
+        result
+    }
+
+    fn parse(
+        &mut self,
+    ) -> Result<(
+        &'data elf::Verneed<Elf::Endian>,
+        VernauxIterator<'data, Elf>,
+    )> {
         let verneed = self
             .data
             .read_at::<elf::Verneed<_>>(0)
@@ -349,7 +406,18 @@ impl<'data, Elf: FileHeader> VerneedIterator<'data, Elf> {
         } else {
             self.data = Bytes(&[]);
         }
-        Ok(Some((verneed, vernaux)))
+        Ok((verneed, vernaux))
+    }
+}
+
+impl<'data, Elf: FileHeader> Iterator for VerneedIterator<'data, Elf> {
+    type Item = Result<(
+        &'data elf::Verneed<Elf::Endian>,
+        VernauxIterator<'data, Elf>,
+    )>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next().transpose()
     }
 }
 
@@ -376,16 +444,32 @@ impl<'data, Elf: FileHeader> VernauxIterator<'data, Elf> {
             return Ok(None);
         }
 
+        let result = self.parse().map(Some);
+        if result.is_err() {
+            self.count = 0;
+        } else {
+            self.count -= 1;
+        }
+        result
+    }
+
+    fn parse(&mut self) -> Result<&'data elf::Vernaux<Elf::Endian>> {
         let vernaux = self
             .data
             .read_at::<elf::Vernaux<_>>(0)
             .read_error("ELF vernaux is too short")?;
-
         self.data
             .skip(vernaux.vna_next.get(self.endian) as usize)
             .read_error("Invalid ELF vna_next")?;
-        self.count -= 1;
-        Ok(Some(vernaux))
+        Ok(vernaux)
+    }
+}
+
+impl<'data, Elf: FileHeader> Iterator for VernauxIterator<'data, Elf> {
+    type Item = Result<&'data elf::Vernaux<Elf::Endian>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next().transpose()
     }
 }
 

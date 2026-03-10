@@ -1,39 +1,37 @@
-use crate::r#gen::SchemaGenerator;
-use crate::schema::*;
-use crate::JsonSchema;
-use std::borrow::Cow;
+use crate::_alloc_prelude::*;
+use crate::generate::Contract;
+use crate::{JsonSchema, Schema, SchemaGenerator};
+use alloc::borrow::Cow;
+use serde_json::Value;
 
 macro_rules! decimal_impl {
     ($type:ty) => {
         impl JsonSchema for $type {
-            no_ref_schema!();
+            inline_schema!();
 
-            fn schema_name() -> String {
-                "Decimal".to_owned()
+            fn schema_name() -> Cow<'static, str> {
+                "Decimal".into()
             }
 
-            fn schema_id() -> Cow<'static, str> {
-                Cow::Borrowed("Decimal")
-            }
+            fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+                let (ty, pattern) = match generator.contract() {
+                    Contract::Deserialize => (
+                        Value::Array(vec!["string".into(), "number".into()]),
+                        r"^-?\d+(\.\d+)?([eE]\d+)?$".into(),
+                    ),
+                    Contract::Serialize => ("string".into(), r"^-?\d+(\.\d+)?$".into()),
+                };
 
-            fn json_schema(_: &mut SchemaGenerator) -> Schema {
-                SchemaObject {
-                    instance_type: Some(InstanceType::String.into()),
-                    string: Some(Box::new(StringValidation {
-                        pattern: Some(r"^-?[0-9]+(\.[0-9]+)?$".to_owned()),
-                        ..Default::default()
-                    })),
-                    ..Default::default()
-                }
-                .into()
+                let mut result = Schema::default();
+                result.insert("type".to_owned(), ty);
+                result.insert("pattern".to_owned(), pattern);
+                result
             }
         }
     };
 }
 
-#[cfg(feature = "rust_decimal")]
-decimal_impl!(rust_decimal::Decimal);
-#[cfg(feature = "bigdecimal03")]
-decimal_impl!(bigdecimal03::BigDecimal);
+#[cfg(feature = "rust_decimal1")]
+decimal_impl!(rust_decimal1::Decimal);
 #[cfg(feature = "bigdecimal04")]
 decimal_impl!(bigdecimal04::BigDecimal);

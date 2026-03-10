@@ -1,3 +1,8 @@
+# v4.0.8 (2025-10-12)
+
+- Replaced the crate `termsize` with `termize` to fix a edge-case where it was unable to get the terminal
+  width on some SSH sessions. This will only affect the `auto_table_width` feature.
+
 # v4.0.7 (2025-05-14)
 
 - Replaced the crate `lazy_static` with `std::sync::LazyLock`. This change is only for the `color_codes`

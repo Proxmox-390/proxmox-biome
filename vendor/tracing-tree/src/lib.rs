@@ -339,7 +339,7 @@ where
         let should_write = match style {
             SpanMode::Open { .. } | SpanMode::Event => true,
             // Print the parent of a new span again before entering the child
-            SpanMode::PreOpen { .. } if self.config.verbose_entry => true,
+            SpanMode::PreOpen if self.config.verbose_entry => true,
             SpanMode::Close { verbose } => verbose,
             // Generated if `span_retrace` is enabled
             SpanMode::Retrace { .. } => true,
@@ -598,6 +598,18 @@ where
                 // Consider parent as entered
 
                 self.write_span_info(&parent_span, bufs, SpanMode::PostClose);
+            }
+        }
+    }
+
+    fn on_record(&self, id: &Id, values: &tracing_core::span::Record<'_>, ctx: Context<S>) {
+        let Some(_guard) = Self::is_recursive() else {
+            return;
+        };
+
+        if let Some(span) = ctx.span(id) {
+            if let Some(data) = span.extensions_mut().get_mut::<Data>() {
+                values.record(data);
             }
         }
     }

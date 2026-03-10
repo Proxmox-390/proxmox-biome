@@ -227,7 +227,7 @@
 //! components = ["rust-src"]
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/trybuild/1.0.105")]
+#![doc(html_root_url = "https://docs.rs/trybuild/1.0.114")]
 #![cfg_attr(not(check_cfg), allow(unexpected_cfgs))]
 #![allow(
     clippy::collapsible_if,
@@ -259,6 +259,7 @@
     clippy::while_let_on_iterator,
 )]
 #![deny(clippy::clone_on_ref_ptr)]
+#![allow(unknown_lints, mismatched_lifetime_syntaxes)]
 
 #[macro_use]
 mod term;

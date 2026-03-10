@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.56"
+rust-version = "1.68"
 name = "bpaf"
-version = "0.9.20"
+version = "0.9.23"
 authors = ["Michael Baykov <manpacket@gmail.com>"]
 build = false
 include = [
@@ -43,16 +43,12 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/pacak/bpaf"
 
 [package.metadata.docs.rs]
+features = ["unstable-docs"]
 cargo-args = [
     "-Zunstable-options",
     "-Zrustdoc-scrape-examples",
 ]
-features = ["unstable-docs"]
-rustdoc-args = [
-    "--cfg",
-    "docsrs",
-    "--generate-link-to-definition",
-]
+rustdoc-args = ["--generate-link-to-definition"]
 
 [features]
 autocomplete = []
@@ -255,7 +251,7 @@ name = "xorg"
 path = "examples/xorg.rs"
 
 [dependencies.bpaf_derive]
-version = "=0.5.17"
+version = "=0.5.23"
 optional = true
 
 [dependencies.owo-colors]

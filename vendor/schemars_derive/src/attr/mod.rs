@@ -1,324 +1,565 @@
+mod custom_meta;
 mod doc;
+mod parse_meta;
 mod schemars_to_serde;
 mod validation;
 
-pub use schemars_to_serde::process_serde_attrs;
-pub use validation::ValidationAttrs;
-
-use crate::metadata::SchemaMetadata;
-use proc_macro2::{Group, Span, TokenStream, TokenTree};
+use parse_meta::{
+    parse_extensions, parse_name_value_expr, parse_name_value_lit_str, require_name_value_lit_str,
+    require_path_only,
+};
+use proc_macro2::TokenStream;
 use quote::ToTokens;
 use serde_derive_internals::Ctxt;
-use syn::parse::{self, Parse};
-use syn::{Meta, MetaNameValue};
+use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
+use syn::{Attribute, Expr, ExprLit, Ident, Lit, LitStr, Path, Type};
+use validation::ValidationAttrs;
 
-// FIXME using the same struct for containers+variants+fields means that
-//  with/schema_with are accepted (but ignored) on containers, and
-//  repr/crate_name are accepted (but ignored) on variants and fields etc.
+use crate::ast::Data;
+use crate::idents::SCHEMA;
+use crate::schema_exprs::SchemaExpr;
 
-#[derive(Debug, Default)]
-pub struct Attrs {
-    pub with: Option<WithAttr>,
-    pub title: Option<String>,
-    pub description: Option<String>,
+pub use custom_meta::*;
+pub use schemars_to_serde::process_serde_attrs;
+
+#[derive(Default)]
+pub struct CommonAttrs {
+    pub doc: Option<Expr>,
     pub deprecated: bool,
-    pub examples: Vec<syn::Path>,
-    pub repr: Option<syn::Type>,
-    pub crate_name: Option<syn::Path>,
-    pub is_renamed: bool,
+    pub title: Option<Expr>,
+    pub description: Option<Expr>,
+    pub examples: Vec<Expr>,
+    pub extensions: Vec<(String, TokenStream)>,
+    pub transforms: Vec<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Default)]
+pub struct FieldAttrs {
+    pub common: CommonAttrs,
+    pub with: Option<WithAttr>,
+    pub validation: ValidationAttrs,
+}
+
+#[derive(Default)]
+pub struct ContainerAttrs {
+    pub common: CommonAttrs,
+    pub repr: Option<Type>,
+    pub crate_name: Option<Path>,
+    // The actual parsing of this is done in `get_rename_format_type_params()`,
+    // because it depends on the type's generic params.
+    pub rename_format_string: Option<LitStr>,
+    pub inline: bool,
+    pub ref_variants: bool,
+    pub with: Option<WithAttr>,
+}
+
+#[derive(Default)]
+pub struct VariantAttrs {
+    pub common: CommonAttrs,
+    pub with: Option<WithAttr>,
+}
+
 pub enum WithAttr {
-    Type(syn::Type),
-    Function(syn::Path),
+    Type(Type),
+    Function(Path),
 }
 
-impl Attrs {
-    pub fn new(attrs: &[syn::Attribute], errors: &Ctxt) -> Self {
-        let mut result = Attrs::default()
-            .populate(attrs, "schemars", false, errors)
-            .populate(attrs, "serde", true, errors);
-
-        result.deprecated = attrs.iter().any(|a| a.path().is_ident("deprecated"));
-        result.repr = attrs
-            .iter()
-            .find(|a| a.path().is_ident("repr"))
-            .and_then(|a| a.parse_args().ok());
-
-        let (doc_title, doc_description) = doc::get_title_and_desc_from_doc(attrs);
-        result.title = result.title.or(doc_title);
-        result.description = result.description.or(doc_description);
-
-        result
-    }
-
-    pub fn as_metadata(&self) -> SchemaMetadata<'_> {
-        #[allow(clippy::ptr_arg)]
-        fn none_if_empty(s: &String) -> Option<&str> {
-            if s.is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        }
-
-        SchemaMetadata {
-            title: self.title.as_ref().and_then(none_if_empty),
-            description: self.description.as_ref().and_then(none_if_empty),
-            deprecated: self.deprecated,
-            examples: &self.examples,
-            read_only: false,
-            write_only: false,
-            default: None,
-        }
-    }
-
+impl CommonAttrs {
     fn populate(
-        mut self,
-        attrs: &[syn::Attribute],
-        attr_type: &'static str,
-        ignore_errors: bool,
-        errors: &Ctxt,
-    ) -> Self {
-        let duplicate_error = |meta: &MetaNameValue| {
-            if !ignore_errors {
-                let msg = format!(
-                    "duplicate schemars attribute `{}`",
-                    meta.path.get_ident().unwrap()
-                );
-                errors.error_spanned_by(meta, msg)
-            }
-        };
-        let mutual_exclusive_error = |meta: &MetaNameValue, other: &str| {
-            if !ignore_errors {
-                let msg = format!(
-                    "schemars attribute cannot contain both `{}` and `{}`",
-                    meta.path.get_ident().unwrap(),
-                    other,
-                );
-                errors.error_spanned_by(meta, msg)
-            }
-        };
+        &mut self,
+        attrs: &[Attribute],
+        schemars_cx: &mut AttrCtxt,
+        serde_cx: &mut AttrCtxt,
+    ) {
+        self.process_attr(schemars_cx);
+        self.process_attr(serde_cx);
 
-        for meta_item in get_meta_items(attrs, attr_type, errors, ignore_errors) {
-            match &meta_item {
-                Meta::NameValue(m) if m.path.is_ident("with") => {
-                    if let Ok(ty) = parse_lit_into_ty(errors, attr_type, "with", &m.value) {
-                        match self.with {
-                            Some(WithAttr::Type(_)) => duplicate_error(m),
-                            Some(WithAttr::Function(_)) => mutual_exclusive_error(m, "schema_with"),
-                            None => self.with = Some(WithAttr::Type(ty)),
-                        }
-                    }
-                }
+        self.doc = doc::get_doc(attrs);
+        self.deprecated = attrs.iter().any(|a| a.path().is_ident("deprecated"));
+    }
 
-                Meta::NameValue(m) if m.path.is_ident("schema_with") => {
-                    if let Ok(fun) = parse_lit_into_path(errors, attr_type, "schema_with", &m.value)
+    fn process_attr(&mut self, cx: &mut AttrCtxt) {
+        cx.parse_meta(|m, n, c| self.process_meta(m, n, c));
+    }
+
+    fn process_meta(
+        &mut self,
+        meta: CustomMeta,
+        meta_name: &str,
+        cx: &AttrCtxt,
+    ) -> Result<(), CustomMeta> {
+        match meta_name {
+            "title" => match self.title {
+                Some(_) => cx.duplicate_error(&meta),
+                None => self.title = parse_name_value_expr(meta, cx).ok(),
+            },
+
+            "description" => match self.description {
+                Some(_) => cx.duplicate_error(&meta),
+                None => self.description = parse_name_value_expr(meta, cx).ok(),
+            },
+
+            "example" => {
+                if let Ok(expr) = parse_name_value_expr(meta, cx) {
+                    if let Expr::Lit(ExprLit {
+                        lit: Lit::Str(lit_str),
+                        ..
+                    }) = &expr
                     {
-                        match self.with {
-                            Some(WithAttr::Function(_)) => duplicate_error(m),
-                            Some(WithAttr::Type(_)) => mutual_exclusive_error(m, "with"),
-                            None => self.with = Some(WithAttr::Function(fun)),
+                        if lit_str.parse::<Path>().is_ok() {
+                            let lit_str_value = lit_str.value();
+                            cx.error_spanned_by(&expr, format_args!(
+                                "`example` value must be an expression, and string literals that may be interpreted as function paths are currently disallowed to avoid migration errors \
+                                 (this restriction may be relaxed in a future version of schemars).\n\
+                                If you want to use the result of a function, use `#[schemars(example = {lit_str_value}())]`.\n\
+                                Or to use the string literal value, use `#[schemars(example = &\"{lit_str_value}\")]`."));
                         }
                     }
+
+                    self.examples.push(expr);
                 }
+            }
 
-                Meta::NameValue(m) if m.path.is_ident("title") => {
-                    if let Ok(title) = expr_as_lit_str(errors, attr_type, "title", &m.value) {
-                        match self.title {
-                            Some(_) => duplicate_error(m),
-                            None => self.title = Some(title.value()),
-                        }
-                    }
-                }
-
-                Meta::NameValue(m) if m.path.is_ident("description") => {
-                    if let Ok(description) =
-                        expr_as_lit_str(errors, attr_type, "description", &m.value)
-                    {
-                        match self.description {
-                            Some(_) => duplicate_error(m),
-                            None => self.description = Some(description.value()),
-                        }
-                    }
-                }
-
-                Meta::NameValue(m) if m.path.is_ident("example") => {
-                    if let Ok(fun) = parse_lit_into_path(errors, attr_type, "example", &m.value) {
-                        self.examples.push(fun)
-                    }
-                }
-
-                Meta::NameValue(m) if m.path.is_ident("rename") => self.is_renamed = true,
-
-                Meta::NameValue(m) if m.path.is_ident("crate") && attr_type == "schemars" => {
-                    if let Ok(p) = parse_lit_into_path(errors, attr_type, "crate", &m.value) {
-                        if self.crate_name.is_some() {
-                            duplicate_error(m)
-                        } else {
-                            self.crate_name = Some(p)
-                        }
-                    }
-                }
-
-                _ if ignore_errors => {}
-
-                Meta::List(m) if m.path.is_ident("inner") && attr_type == "schemars" => {
-                    // This will be processed with the validation attributes.
-                    // It's allowed only for the schemars attribute because the
-                    // validator crate doesn't support it yet.
-                }
-
-                _ => {
-                    if !is_known_serde_or_validation_keyword(&meta_item) {
-                        let path = meta_item
-                            .path()
-                            .into_token_stream()
-                            .to_string()
-                            .replace(' ', "");
-                        errors.error_spanned_by(
-                            meta_item.path(),
-                            format!("unknown schemars attribute `{}`", path),
+            "extend" => {
+                for ex in parse_extensions(&meta, cx).into_iter().flatten() {
+                    // This is O(n^2) but should be fine with the typically small number of
+                    // extensions. If this does become a problem, it can be changed to use
+                    // IndexMap, or a separate Map with cloned keys.
+                    if self.extensions.iter().any(|e| e.0 == ex.key_str) {
+                        cx.error_spanned_by(
+                            ex.key_lit,
+                            format_args!("Duplicate extension key '{}'", ex.key_str),
                         );
+                    } else {
+                        self.extensions.push((ex.key_str, ex.value));
                     }
                 }
             }
+
+            "transform" => {
+                if let Ok(expr) = parse_name_value_expr(meta, cx) {
+                    if let Expr::Lit(ExprLit {
+                        lit: Lit::Str(lit_str),
+                        ..
+                    }) = &expr
+                    {
+                        if lit_str.parse::<Expr>().is_ok() {
+                            cx.error_spanned_by(
+                                &expr,
+                                format_args!(
+                                    "Expected a `fn(&mut Schema)` or other value implementing `schemars::transform::Transform`, found `&str`.\nDid you mean `#[schemars(transform = {})]`?",
+                                    lit_str.value()
+                                ),
+                            );
+                        }
+                    } else {
+                        self.transforms.push(expr);
+                    }
+                }
+            }
+
+            _ => return Err(meta),
         }
-        self
+
+        Ok(())
     }
 
     pub fn is_default(&self) -> bool {
-        matches!(self, Self {
-                with: None,
+        matches!(
+            self,
+            Self {
                 title: None,
                 description: None,
+                doc: None,
                 deprecated: false,
                 examples,
-                repr: None,
-                crate_name: None,
-                is_renamed: _,
-            } if examples.is_empty())
+                extensions,
+                transforms,
+            } if examples.is_empty() && extensions.is_empty() && transforms.is_empty()
+        )
+    }
+
+    pub fn add_mutators(&self, expr: &mut SchemaExpr) {
+        let mutators = &mut expr.mutators;
+
+        let mut title = self.title.as_ref().map(ToTokens::to_token_stream);
+        let mut description = self.description.as_ref().map(ToTokens::to_token_stream);
+        if let Some(doc) = &self.doc {
+            title.get_or_insert_with(|| {
+                quote!({
+                    const TITLE: &str = schemars::_private::get_title_and_description(#doc).0;
+                    TITLE
+                })
+            });
+            description.get_or_insert_with(|| {
+                quote!({
+                    const DESCRIPTION: &str = schemars::_private::get_title_and_description(#doc).1;
+                    DESCRIPTION
+                })
+            });
+        }
+        if let Some(title) = title {
+            mutators.push(quote! {
+                schemars::_private::insert_metadata_property_if_nonempty(&mut #SCHEMA, "title", #title);
+            });
+        }
+        if let Some(description) = description {
+            mutators.push(quote! {
+                schemars::_private::insert_metadata_property_if_nonempty(&mut #SCHEMA, "description", #description);
+            });
+        }
+
+        if self.deprecated {
+            mutators.push(quote! {
+                #SCHEMA.insert("deprecated".into(), true.into());
+            });
+        }
+
+        if !self.examples.is_empty() {
+            let examples = self.examples.iter().map(|eg| {
+                quote! {
+                    schemars::_private::serde_json::value::to_value(#eg)
+                }
+            });
+            mutators.push(quote! {
+                #SCHEMA.insert("examples".into(), schemars::_private::serde_json::Value::Array([#(#examples),*].into_iter().flatten().collect()));
+            });
+        }
+
+        // Post-Mutators - extensions and transforms will be applied after all other mutators
+
+        for (k, v) in &self.extensions {
+            expr.post_mutators.push(quote! {
+                #SCHEMA.insert(#k.into(), schemars::_private::serde_json::json!(#v));
+            });
+        }
+
+        for transform in &self.transforms {
+            expr.post_mutators.push(quote_spanned! {transform.span()=>
+                schemars::transform::Transform::transform(&mut #transform, &mut #SCHEMA);
+            });
+        }
     }
 }
 
-fn is_known_serde_or_validation_keyword(meta: &syn::Meta) -> bool {
-    let mut known_keywords = schemars_to_serde::SERDE_KEYWORDS
-        .iter()
-        .chain(validation::VALIDATION_KEYWORDS);
-    meta.path()
-        .get_ident()
-        .map(|i| known_keywords.any(|k| i == k))
-        .unwrap_or(false)
+impl FieldAttrs {
+    pub fn new(attrs: &[Attribute], cx: &Ctxt) -> Self {
+        let mut result = Self::default();
+        result.populate(attrs, cx);
+        result
+    }
+
+    fn populate(&mut self, attrs: &[Attribute], cx: &Ctxt) {
+        let schemars_cx = &mut AttrCtxt::new(cx, attrs, "schemars");
+        let serde_cx = &mut AttrCtxt::new(cx, attrs, "serde");
+        let validate_cx = &mut AttrCtxt::new(cx, attrs, "validate");
+        let garde_cx = &mut AttrCtxt::new(cx, attrs, "garde");
+
+        self.common.populate(attrs, schemars_cx, serde_cx);
+        self.validation.populate(schemars_cx, validate_cx, garde_cx);
+        self.process_attr(schemars_cx);
+        self.process_attr(serde_cx);
+    }
+
+    fn process_attr(&mut self, cx: &mut AttrCtxt) {
+        cx.parse_meta(|m, n, c| self.process_meta(m, n, c));
+    }
+
+    fn process_meta(
+        &mut self,
+        meta: CustomMeta,
+        meta_name: &str,
+        cx: &AttrCtxt,
+    ) -> Result<(), CustomMeta> {
+        match meta_name {
+            "with" => match self.with {
+                Some(WithAttr::Type(_)) => cx.duplicate_error(&meta),
+                Some(WithAttr::Function(_)) => cx.mutual_exclusive_error(&meta, "schema_with"),
+                None => self.with = parse_name_value_lit_str(meta, cx).ok().map(WithAttr::Type),
+            },
+            "schema_with" if cx.attr_type == "schemars" => match self.with {
+                Some(WithAttr::Function(_)) => cx.duplicate_error(&meta),
+                Some(WithAttr::Type(_)) => cx.mutual_exclusive_error(&meta, "with"),
+                None => {
+                    self.with = parse_name_value_lit_str(meta, cx)
+                        .ok()
+                        .map(WithAttr::Function);
+                }
+            },
+
+            _ => return Err(meta),
+        }
+
+        Ok(())
+    }
+
+    pub fn is_default(&self) -> bool {
+        matches!(
+            self,
+            Self {
+                common,
+                validation,
+                with: None,
+            } if common.is_default() && validation.is_default())
+    }
 }
 
-fn get_meta_items(
-    attrs: &[syn::Attribute],
-    attr_type: &'static str,
-    errors: &Ctxt,
-    ignore_errors: bool,
-) -> Vec<Meta> {
+impl ContainerAttrs {
+    pub fn new(attrs: &[Attribute], data: &Data, cx: &Ctxt) -> Self {
+        let mut result = Self::default();
+        result.populate(attrs, data, cx);
+        result
+    }
+
+    fn populate(&mut self, attrs: &[Attribute], data: &Data, cx: &Ctxt) {
+        let schemars_cx = &mut AttrCtxt::new(cx, attrs, "schemars");
+        let serde_cx = &mut AttrCtxt::new(cx, attrs, "serde");
+
+        self.common.populate(attrs, schemars_cx, serde_cx);
+        self.process_attr(data, schemars_cx);
+        self.process_attr(data, serde_cx);
+
+        self.repr = attrs
+            .iter()
+            .find(|a| a.path().is_ident("repr"))
+            .and_then(|a| a.parse_args().ok());
+    }
+
+    fn process_attr(&mut self, data: &Data, cx: &mut AttrCtxt) {
+        cx.parse_meta(|m, n, c| self.process_meta(m, n, data, c));
+    }
+
+    fn process_meta(
+        &mut self,
+        meta: CustomMeta,
+        meta_name: &str,
+        data: &Data,
+        cx: &AttrCtxt,
+    ) -> Result<(), CustomMeta> {
+        match meta_name {
+            "crate" => match self.crate_name {
+                Some(_) => cx.duplicate_error(&meta),
+                None => self.crate_name = parse_name_value_lit_str(meta, cx).ok(),
+            },
+
+            "rename" if cx.attr_type == "schemars" => match self.rename_format_string {
+                Some(_) => cx.duplicate_error(&meta),
+                None => self.rename_format_string = require_name_value_lit_str(meta, cx).ok(),
+            },
+
+            "inline" => {
+                if self.inline {
+                    cx.duplicate_error(&meta);
+                } else if require_path_only(&meta, cx).is_ok() {
+                    self.inline = true;
+                }
+            }
+
+            "with" if cx.attr_type == "schemars" => match self.with {
+                Some(WithAttr::Type(_)) => cx.duplicate_error(&meta),
+                Some(WithAttr::Function(_)) => cx.mutual_exclusive_error(&meta, "schema_with"),
+                None => self.with = parse_name_value_lit_str(meta, cx).ok().map(WithAttr::Type),
+            },
+            "schema_with" if cx.attr_type == "schemars" => match self.with {
+                Some(WithAttr::Function(_)) => cx.duplicate_error(&meta),
+                Some(WithAttr::Type(_)) => cx.mutual_exclusive_error(&meta, "with"),
+                None => {
+                    self.with = parse_name_value_lit_str(meta, cx)
+                        .ok()
+                        .map(WithAttr::Function);
+                }
+            },
+
+            "_unstable_ref_variants" if cx.attr_type == "schemars" => {
+                if !matches!(data, Data::Enum(_)) {
+                    cx.error_spanned_by(
+                        meta.path(),
+                        "`_unstable_ref_variants` can only be used on enums",
+                    );
+                } else if self.ref_variants {
+                    cx.duplicate_error(&meta);
+                } else if require_path_only(&meta, cx).is_ok() {
+                    self.ref_variants = true;
+                }
+            }
+
+            _ => return Err(meta),
+        }
+
+        Ok(())
+    }
+}
+
+impl VariantAttrs {
+    pub fn new(attrs: &[Attribute], cx: &Ctxt) -> Self {
+        let mut result = Self::default();
+        result.populate(attrs, cx);
+        result
+    }
+
+    fn populate(&mut self, attrs: &[Attribute], cx: &Ctxt) {
+        let schemars_cx = &mut AttrCtxt::new(cx, attrs, "schemars");
+        let serde_cx = &mut AttrCtxt::new(cx, attrs, "serde");
+
+        self.common.populate(attrs, schemars_cx, serde_cx);
+        self.process_attr(schemars_cx);
+        self.process_attr(serde_cx);
+    }
+
+    fn process_attr(&mut self, cx: &mut AttrCtxt) {
+        cx.parse_meta(|m, n, c| self.process_meta(m, n, c));
+    }
+
+    fn process_meta(
+        &mut self,
+        meta: CustomMeta,
+        meta_name: &str,
+        cx: &AttrCtxt,
+    ) -> Result<(), CustomMeta> {
+        match meta_name {
+            "with" => match self.with {
+                Some(WithAttr::Type(_)) => cx.duplicate_error(&meta),
+                Some(WithAttr::Function(_)) => cx.mutual_exclusive_error(&meta, "schema_with"),
+                None => self.with = parse_name_value_lit_str(meta, cx).ok().map(WithAttr::Type),
+            },
+            "schema_with" if cx.attr_type == "schemars" => match self.with {
+                Some(WithAttr::Function(_)) => cx.duplicate_error(&meta),
+                Some(WithAttr::Type(_)) => cx.mutual_exclusive_error(&meta, "with"),
+                None => {
+                    self.with = parse_name_value_lit_str(meta, cx)
+                        .ok()
+                        .map(WithAttr::Function);
+                }
+            },
+
+            _ => return Err(meta),
+        }
+
+        Ok(())
+    }
+
+    pub fn is_default(&self) -> bool {
+        matches!(
+            self,
+            Self {
+                common,
+                with: None,
+            } if common.is_default()
+        )
+    }
+}
+
+fn get_meta_items(attrs: &[Attribute], attr_type: &'static str, cx: &Ctxt) -> Vec<CustomMeta> {
     let mut result = vec![];
+
     for attr in attrs.iter().filter(|a| a.path().is_ident(attr_type)) {
-        match attr.parse_args_with(syn::punctuated::Punctuated::<Meta, Token![,]>::parse_terminated)
-        {
+        match attr.parse_args_with(Punctuated::<CustomMeta, Token![,]>::parse_terminated) {
             Ok(list) => result.extend(list),
-            Err(err) if !ignore_errors => errors.syn_error(err),
-            Err(_) => {}
+            Err(err) => {
+                if attr_type == "schemars" {
+                    cx.syn_error(err);
+                }
+            }
         }
     }
 
     result
 }
 
-fn expr_as_lit_str<'a>(
-    cx: &Ctxt,
+fn path_str(path: &Path) -> String {
+    path.get_ident().map_or_else(
+        || path.into_token_stream().to_string().replace(' ', ""),
+        Ident::to_string,
+    )
+}
+
+pub struct AttrCtxt<'a> {
+    inner: &'a Ctxt,
     attr_type: &'static str,
-    meta_item_name: &'static str,
-    expr: &'a syn::Expr,
-) -> Result<&'a syn::LitStr, ()> {
-    if let syn::Expr::Lit(syn::ExprLit {
-        lit: syn::Lit::Str(lit_str),
-        ..
-    }) = expr
-    {
-        Ok(lit_str)
-    } else {
-        cx.error_spanned_by(
-            expr,
-            format!(
-                "expected {} {} attribute to be a string: `{} = \"...\"`",
-                attr_type, meta_item_name, meta_item_name
-            ),
-        );
-        Err(())
+    metas: Vec<CustomMeta>,
+}
+
+impl<'a> AttrCtxt<'a> {
+    pub fn new(inner: &'a Ctxt, attrs: &'a [Attribute], attr_type: &'static str) -> Self {
+        Self {
+            inner,
+            attr_type,
+            metas: get_meta_items(attrs, attr_type, inner),
+        }
+    }
+
+    pub fn new_nested_meta(&self, metas: Vec<CustomMeta>) -> Self {
+        Self { metas, ..*self }
+    }
+
+    pub fn parse_meta(
+        &mut self,
+        mut handle: impl FnMut(CustomMeta, &str, &Self) -> Result<(), CustomMeta>,
+    ) {
+        let metas = std::mem::take(&mut self.metas);
+        self.metas = metas
+            .into_iter()
+            .filter_map(|meta| match meta.path().get_ident().map(Ident::to_string) {
+                Some(ident) => handle(meta, &ident, self).err(),
+                _ => Some(meta),
+            })
+            .collect();
+    }
+
+    pub fn error_spanned_by<A: ToTokens, T: std::fmt::Display>(&self, obj: A, msg: T) {
+        self.inner.error_spanned_by(obj, msg);
+    }
+
+    pub fn syn_error(&self, err: syn::Error) {
+        self.inner.syn_error(err);
+    }
+
+    pub fn mutual_exclusive_error(&self, meta: &CustomMeta, other_attr: &str) {
+        if self.attr_type == "schemars" {
+            self.error_spanned_by(
+                meta,
+                format_args!(
+                    "schemars attribute cannot contain both `{}` and `{}`",
+                    path_str(meta.path()),
+                    other_attr,
+                ),
+            );
+        }
+    }
+
+    pub fn duplicate_error(&self, meta: &CustomMeta) {
+        if self.attr_type == "schemars" {
+            self.error_spanned_by(
+                meta,
+                format_args!(
+                    "duplicate schemars attribute item `{}`",
+                    path_str(meta.path())
+                ),
+            );
+        }
     }
 }
 
-fn parse_lit_into_ty(
-    cx: &Ctxt,
-    attr_type: &'static str,
-    meta_item_name: &'static str,
-    lit: &syn::Expr,
-) -> Result<syn::Type, ()> {
-    let string = expr_as_lit_str(cx, attr_type, meta_item_name, lit)?;
-
-    parse_lit_str(string).map_err(|_| {
-        cx.error_spanned_by(
-            lit,
-            format!(
-                "failed to parse type: `{} = {:?}`",
-                meta_item_name,
-                string.value()
-            ),
-        )
-    })
-}
-
-fn parse_lit_into_path(
-    cx: &Ctxt,
-    attr_type: &'static str,
-    meta_item_name: &'static str,
-    expr: &syn::Expr,
-) -> Result<syn::Path, ()> {
-    let lit_str = expr_as_lit_str(cx, attr_type, meta_item_name, expr)?;
-
-    parse_lit_str(lit_str).map_err(|_| {
-        cx.error_spanned_by(
-            expr,
-            format!(
-                "failed to parse path: `{} = {:?}`",
-                meta_item_name,
-                lit_str.value()
-            ),
-        )
-    })
-}
-
-fn parse_lit_str<T>(s: &syn::LitStr) -> parse::Result<T>
-where
-    T: Parse,
-{
-    let tokens = spanned_tokens(s)?;
-    syn::parse2(tokens)
-}
-
-fn spanned_tokens(s: &syn::LitStr) -> parse::Result<TokenStream> {
-    let stream = syn::parse_str(&s.value())?;
-    Ok(respan_token_stream(stream, s.span()))
-}
-
-fn respan_token_stream(stream: TokenStream, span: Span) -> TokenStream {
-    stream
-        .into_iter()
-        .map(|token| respan_token_tree(token, span))
-        .collect()
-}
-
-fn respan_token_tree(mut token: TokenTree, span: Span) -> TokenTree {
-    if let TokenTree::Group(g) = &mut token {
-        *g = Group::new(g.delimiter(), respan_token_stream(g.stream(), span));
+impl Drop for AttrCtxt<'_> {
+    fn drop(&mut self) {
+        if self.attr_type == "schemars" {
+            for unhandled_meta in self.metas.iter().filter(|m| !is_schemars_serde_keyword(m)) {
+                self.error_spanned_by(
+                    unhandled_meta.path(),
+                    format_args!(
+                        "unknown schemars attribute `{}`",
+                        path_str(unhandled_meta.path())
+                    ),
+                );
+            }
+        }
     }
-    token.set_span(span);
-    token
+}
+
+fn is_schemars_serde_keyword(meta: &CustomMeta) -> bool {
+    let known_keywords = schemars_to_serde::SCHEMARS_KEYWORDS_PARSED_BY_SERDE;
+    meta.path()
+        .get_ident()
+        .is_some_and(|i| known_keywords.contains(&i.to_string().as_str()))
 }

@@ -5,6 +5,7 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_quote,
     punctuated::Punctuated,
+    spanned::Spanned,
     token,
     visit_mut::VisitMut,
     Attribute, Error, Expr, Ident, ItemFn, LitChar, LitStr, Result, Visibility,
@@ -218,32 +219,36 @@ impl ToTokens for Top {
                     short,
                     help,
                 } = command;
-                let name = name.as_ref().expect("Internal bpaf_derive error: Command name was not set! This is a bug, please report it.");
-                let long = long.iter().map(|v| quote!(.long(#v)));
-                let short = short.iter().map(|v| quote!(.short(#v)));
-                let help = help.as_ref().map(|v| quote!(.help(#v)));
-                quote! {
-                    #vis fn #generate() -> impl ::bpaf::Parser<#ty> {
+                if let Some(name) = name.as_ref() {
+                    let long = long.iter().map(|v| quote!(.long(#v)));
+                    let short = short.iter().map(|v| quote!(.short(#v)));
+                    let help = help.as_ref().map(|v| quote!(.help(#v)));
+                    quote! {
+                        #[doc(hidden)]
+                        #vis fn #generate() -> impl ::bpaf::Parser<#ty> {
 
-                        #[allow(unused_imports)]
-                        use ::bpaf::Parser;
-                        #body
-                        #(.#attrs)*
-                        .to_options()
-                        #fallback_usage
-                        #version
-                        #descr
-                        #header
-                        #footer
-                        #usage
-                        #max_width
-                        .command(#name)
-                        #(#short)*
-                        #(#long)*
-                        #help
-                        #adjacent
-                        #boxed
+                            #[allow(unused_imports)]
+                            use ::bpaf::Parser;
+                            #body
+                            #(.#attrs)*
+                            .to_options()
+                            #fallback_usage
+                            #version
+                            #descr
+                            #header
+                            #footer
+                            #usage
+                            #max_width
+                            .command(#name)
+                            #(#short)*
+                            #(#long)*
+                            #help
+                            #adjacent
+                            #boxed
+                        }
                     }
+                } else {
+                    Error::new(self.span(), "Internal bpaf_derive error: Command name was not set! This is a bug, please report it.").to_compile_error()
                 }
             }
             Mode::Options { options } => {
@@ -275,6 +280,7 @@ impl ToTokens for Top {
                 let max_width = max_width.as_ref().map(|v| quote!(.max_width(#v)));
 
                 quote! {
+                    #[doc(hidden)]
                     #vis fn #generate() -> ::bpaf::OptionParser<#ty> {
                         #[allow(unused_imports)]
                         use ::bpaf::Parser;
@@ -295,6 +301,7 @@ impl ToTokens for Top {
                 let ParserCfg { group_help } = &parser;
                 let group_help = group_help.as_ref().map(|v| quote!(.group_help(#v)));
                 quote! {
+                    #[doc(hidden)]
                     #vis fn #generate() -> impl ::bpaf::Parser<#ty> {
                         #[allow(unused_imports)]
                         use ::bpaf::Parser;
@@ -635,6 +642,11 @@ impl ToTokens for Branch {
             fields,
         } = self;
         match fields {
+            FieldSet::Named(fields) if fields.is_empty() => {
+                quote! {
+                    ::bpaf::pure( #enum_name #ident {})
+                }
+            }
             FieldSet::Named(fields) => {
                 let name = fields
                     .iter()
@@ -646,6 +658,12 @@ impl ToTokens for Branch {
                     #( let #name = #value; )*
                     ::bpaf::construct!( #enum_name #ident { #( #result , )* })
                 }}
+            }
+
+            FieldSet::Unnamed(fields) if fields.is_empty() => {
+                quote! {
+                    ::bpaf::pure( #enum_name #ident ())
+                }
             }
             FieldSet::Unnamed(fields) => {
                 let name = fields

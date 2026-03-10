@@ -1,11 +1,13 @@
 use std::fmt;
+use std::iter::once;
 use std::net::{SocketAddr, TcpStream};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::{io, thread};
 
-use socks::{Socks4Stream, Socks5Stream};
+use socks::{Socks4Stream, Socks5Stream, ToTargetAddr};
 
-use crate::proxy::{Proto, Proxy};
+use crate::proxy::{Proxy, ProxyProtocol};
+use crate::util::UriExt;
 use crate::Error;
 
 use super::chain::Either;
@@ -32,7 +34,7 @@ impl<In: Transport> Connector<In> for SocksConnector {
         chained: Option<In>,
     ) -> Result<Option<Self::Out>, Error> {
         let proxy = match details.config.proxy() {
-            Some(v) if v.proto().is_socks() => v,
+            Some(v) if v.protocol().is_socks() => v,
             // If there is no proxy configured, or it isn't a SOCKS proxy, use whatever is chained.
             _ => {
                 trace!("SOCKS not configured");
@@ -49,7 +51,28 @@ impl<In: Transport> Connector<In> for SocksConnector {
             .resolver
             .resolve(proxy.uri(), details.config, details.timeout)?;
 
-        let stream = try_connect(&proxy_addrs, &details.addrs, proxy, details.timeout)?;
+        // Check if this host is not supposed to be proxied.
+        let is_no_proxy = details
+            .config
+            .proxy()
+            .map(|p| p.is_no_proxy(details.uri))
+            .unwrap_or(false);
+
+        if is_no_proxy {
+            return Ok(None);
+        }
+
+        let stream = if proxy.resolve_target() {
+            // The target is already resolved by run().
+            let resolved = details.addrs.iter().cloned();
+
+            try_connect(&proxy_addrs, resolved, proxy, details.timeout)?
+        } else {
+            // Do not to resolve the target locally, instead pass (host, port)
+            // to the proxy and let it resolve.
+            let iter = once(details.uri.host_port());
+            try_connect(&proxy_addrs, iter, proxy, details.timeout)?
+        };
 
         if details.config.no_delay() {
             stream.set_nodelay(true)?;
@@ -65,26 +88,26 @@ impl<In: Transport> Connector<In> for SocksConnector {
     }
 }
 
-fn try_connect(
+fn try_connect<'a, T: ToTargetAddr + fmt::Debug + Send + 'a + Clone>(
     proxy_addrs: &ResolvedSocketAddrs,
-    target_addrs: &ResolvedSocketAddrs,
+    target_addrs: impl Iterator<Item = T>,
     proxy: &Proxy,
     timeout: NextTimeout,
 ) -> Result<TcpStream, Error> {
     for target_addr in target_addrs {
         for proxy_addr in proxy_addrs {
             trace!(
-                "Try connect {} {} -> {}",
-                proxy.proto(),
+                "Try connect {} {} -> {:?}",
+                proxy.protocol(),
                 proxy_addr,
                 target_addr
             );
 
-            match try_connect_single(*proxy_addr, *target_addr, proxy, timeout) {
+            match try_connect_single(*proxy_addr, target_addr.clone(), proxy, timeout) {
                 Ok(v) => {
                     debug!(
-                        "{} connected {} -> {}",
-                        proxy.proto(),
+                        "{} connected {} -> {:?}",
+                        proxy.protocol(),
                         proxy_addr,
                         target_addr
                     );
@@ -92,7 +115,11 @@ fn try_connect(
                 }
                 // Intercept ConnectionRefused to try next addrs
                 Err(Error::Io(e)) if e.kind() == io::ErrorKind::ConnectionRefused => {
-                    trace!("{} -> {} proxy connection refused", proxy_addr, target_addr);
+                    trace!(
+                        "{} -> {:?} proxy connection refused",
+                        proxy_addr,
+                        target_addr
+                    );
                     continue;
                 }
                 // Other errors bail
@@ -108,9 +135,9 @@ fn try_connect(
     )))
 }
 
-fn try_connect_single(
+fn try_connect_single<'a, T: ToTargetAddr + Send + 'a>(
     proxy_addr: SocketAddr,
-    target_addr: SocketAddr,
+    target_addr: T,
     proxy: &Proxy,
     timeout: NextTimeout,
 ) -> Result<TcpStream, Error> {
@@ -123,30 +150,32 @@ fn try_connect_single(
         let (tx, rx) = mpsc::sync_channel(1);
         let proxy = proxy.clone();
 
-        thread::spawn(move || tx.send(connect_proxy(&proxy, proxy_addr, target_addr)));
+        thread::scope(move |s| {
+            s.spawn(move || tx.send(connect_proxy(&proxy, proxy_addr, target_addr)));
 
-        match rx.recv_timeout(*timeout.after) {
-            Ok(v) => v,
-            Err(RecvTimeoutError::Timeout) => Err(Error::Timeout(timeout.reason)),
-            Err(RecvTimeoutError::Disconnected) => unreachable!("mpsc sender gone"),
-        }
+            match rx.recv_timeout(*timeout.after) {
+                Ok(v) => v,
+                Err(RecvTimeoutError::Timeout) => Err(Error::Timeout(timeout.reason)),
+                Err(RecvTimeoutError::Disconnected) => unreachable!("mpsc sender gone"),
+            }
+        })
     }
 }
 
-fn connect_proxy(
+fn connect_proxy<'a, T: ToTargetAddr + 'a>(
     proxy: &Proxy,
     proxy_addr: SocketAddr,
-    target_addr: SocketAddr,
+    target_addr: T,
 ) -> Result<TcpStream, Error> {
-    let stream = match proxy.proto() {
-        Proto::Socks4 | Proto::Socks4A => {
+    let stream = match proxy.protocol() {
+        ProxyProtocol::Socks4 | ProxyProtocol::Socks4A => {
             if proxy.username().is_some() {
                 debug!("SOCKS4 does not support username/password");
             }
 
             Socks4Stream::connect(proxy_addr, target_addr, "")?.into_inner()
         }
-        Proto::Socks5 => {
+        ProxyProtocol::Socks5 => {
             if let Some(username) = proxy.username() {
                 // Connect with authentication.
                 let password = proxy.password().unwrap_or("");

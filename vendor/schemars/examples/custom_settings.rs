@@ -1,4 +1,4 @@
-use schemars::{r#gen::SchemaSettings, JsonSchema};
+use schemars::{generate::SchemaSettings, JsonSchema};
 
 #[derive(JsonSchema)]
 pub struct MyStruct {
@@ -15,8 +15,8 @@ pub enum MyEnum {
 
 fn main() {
     let settings = SchemaSettings::draft07().with(|s| {
-        s.option_nullable = true;
-        s.option_add_null_type = false;
+        s.meta_schema = None;
+        s.inline_subschemas = true;
     });
     let generator = settings.into_generator();
     let schema = generator.into_root_schema_for::<MyStruct>();

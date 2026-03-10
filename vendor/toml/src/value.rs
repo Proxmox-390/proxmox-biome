@@ -1,17 +1,20 @@
 //! Definition of a TOML [value][Value]
 
-use std::collections::{BTreeMap, HashMap};
-use std::fmt;
-use std::hash::Hash;
-use std::mem::discriminant;
-use std::ops;
-use std::vec;
+use alloc::collections::BTreeMap;
+use alloc::vec;
+use core::fmt;
+use core::hash::Hash;
+use core::mem::discriminant;
+use core::ops;
+#[cfg(feature = "std")]
+use std::collections::HashMap;
 
 use serde::de;
 use serde::de::IntoDeserializer;
 use serde::ser;
 
-use toml_datetime::__unstable as datetime;
+use crate::alloc_prelude::*;
+
 pub use toml_datetime::{Date, Datetime, DatetimeParseError, Offset, Time};
 
 /// Type representing a TOML array, payload of the `Value::Array` variant
@@ -45,7 +48,7 @@ impl Value {
     ///
     /// This conversion can fail if `T`'s implementation of `Serialize` decides to
     /// fail, or if `T` contains a map with non-string keys.
-    pub fn try_from<T>(value: T) -> Result<Value, crate::ser::Error>
+    pub fn try_from<T>(value: T) -> Result<Self, crate::ser::Error>
     where
         T: ser::Serialize,
     {
@@ -76,7 +79,7 @@ impl Value {
     /// index, for example if the index is a string and `self` is an array or a
     /// number. Also returns `None` if the given key does not exist in the map
     /// or the given index is not within the bounds of the array.
-    pub fn get<I: Index>(&self, index: I) -> Option<&Value> {
+    pub fn get<I: Index>(&self, index: I) -> Option<&Self> {
         index.index(self)
     }
 
@@ -88,14 +91,14 @@ impl Value {
     /// index, for example if the index is a string and `self` is an array or a
     /// number. Also returns `None` if the given key does not exist in the map
     /// or the given index is not within the bounds of the array.
-    pub fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut Value> {
+    pub fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut Self> {
         index.index_mut(self)
     }
 
     /// Extracts the integer value if it is an integer.
     pub fn as_integer(&self) -> Option<i64> {
         match *self {
-            Value::Integer(i) => Some(i),
+            Self::Integer(i) => Some(i),
             _ => None,
         }
     }
@@ -108,7 +111,7 @@ impl Value {
     /// Extracts the float value if it is a float.
     pub fn as_float(&self) -> Option<f64> {
         match *self {
-            Value::Float(f) => Some(f),
+            Self::Float(f) => Some(f),
             _ => None,
         }
     }
@@ -121,7 +124,7 @@ impl Value {
     /// Extracts the boolean value if it is a boolean.
     pub fn as_bool(&self) -> Option<bool> {
         match *self {
-            Value::Boolean(b) => Some(b),
+            Self::Boolean(b) => Some(b),
             _ => None,
         }
     }
@@ -134,7 +137,7 @@ impl Value {
     /// Extracts the string of this value if it is a string.
     pub fn as_str(&self) -> Option<&str> {
         match *self {
-            Value::String(ref s) => Some(&**s),
+            Self::String(ref s) => Some(&**s),
             _ => None,
         }
     }
@@ -154,7 +157,7 @@ impl Value {
     /// ```
     pub fn as_datetime(&self) -> Option<&Datetime> {
         match *self {
-            Value::Datetime(ref s) => Some(s),
+            Self::Datetime(ref s) => Some(s),
             _ => None,
         }
     }
@@ -165,17 +168,17 @@ impl Value {
     }
 
     /// Extracts the array value if it is an array.
-    pub fn as_array(&self) -> Option<&Vec<Value>> {
+    pub fn as_array(&self) -> Option<&Vec<Self>> {
         match *self {
-            Value::Array(ref s) => Some(s),
+            Self::Array(ref s) => Some(s),
             _ => None,
         }
     }
 
     /// Extracts the array value if it is an array.
-    pub fn as_array_mut(&mut self) -> Option<&mut Vec<Value>> {
+    pub fn as_array_mut(&mut self) -> Option<&mut Vec<Self>> {
         match *self {
-            Value::Array(ref mut s) => Some(s),
+            Self::Array(ref mut s) => Some(s),
             _ => None,
         }
     }
@@ -188,7 +191,7 @@ impl Value {
     /// Extracts the table value if it is a table.
     pub fn as_table(&self) -> Option<&Table> {
         match *self {
-            Value::Table(ref s) => Some(s),
+            Self::Table(ref s) => Some(s),
             _ => None,
         }
     }
@@ -196,7 +199,7 @@ impl Value {
     /// Extracts the table value if it is a table.
     pub fn as_table_mut(&mut self) -> Option<&mut Table> {
         match *self {
-            Value::Table(ref mut s) => Some(s),
+            Self::Table(ref mut s) => Some(s),
             _ => None,
         }
     }
@@ -207,20 +210,20 @@ impl Value {
     }
 
     /// Tests whether this and another value have the same type.
-    pub fn same_type(&self, other: &Value) -> bool {
+    pub fn same_type(&self, other: &Self) -> bool {
         discriminant(self) == discriminant(other)
     }
 
     /// Returns a human-readable representation of the type of this value.
     pub fn type_str(&self) -> &'static str {
         match *self {
-            Value::String(..) => "string",
-            Value::Integer(..) => "integer",
-            Value::Float(..) => "float",
-            Value::Boolean(..) => "boolean",
-            Value::Datetime(..) => "datetime",
-            Value::Array(..) => "array",
-            Value::Table(..) => "table",
+            Self::String(..) => "string",
+            Self::Integer(..) => "integer",
+            Self::Float(..) => "float",
+            Self::Boolean(..) => "boolean",
+            Self::Datetime(..) => "datetime",
+            Self::Array(..) => "array",
+            Self::Table(..) => "table",
         }
     }
 }
@@ -229,9 +232,9 @@ impl<I> ops::Index<I> for Value
 where
     I: Index,
 {
-    type Output = Value;
+    type Output = Self;
 
-    fn index(&self, index: I) -> &Value {
+    fn index(&self, index: I) -> &Self {
         self.get(index).expect("index not found")
     }
 }
@@ -240,37 +243,38 @@ impl<I> ops::IndexMut<I> for Value
 where
     I: Index,
 {
-    fn index_mut(&mut self, index: I) -> &mut Value {
+    fn index_mut(&mut self, index: I) -> &mut Self {
         self.get_mut(index).expect("index not found")
     }
 }
 
 impl<'a> From<&'a str> for Value {
     #[inline]
-    fn from(val: &'a str) -> Value {
-        Value::String(val.to_string())
+    fn from(val: &'a str) -> Self {
+        Self::String(val.to_owned())
     }
 }
 
-impl<V: Into<Value>> From<Vec<V>> for Value {
-    fn from(val: Vec<V>) -> Value {
-        Value::Array(val.into_iter().map(|v| v.into()).collect())
+impl<V: Into<Self>> From<Vec<V>> for Value {
+    fn from(val: Vec<V>) -> Self {
+        Self::Array(val.into_iter().map(|v| v.into()).collect())
     }
 }
 
-impl<S: Into<String>, V: Into<Value>> From<BTreeMap<S, V>> for Value {
-    fn from(val: BTreeMap<S, V>) -> Value {
+impl<S: Into<String>, V: Into<Self>> From<BTreeMap<S, V>> for Value {
+    fn from(val: BTreeMap<S, V>) -> Self {
         let table = val.into_iter().map(|(s, v)| (s.into(), v.into())).collect();
 
-        Value::Table(table)
+        Self::Table(table)
     }
 }
 
-impl<S: Into<String> + Hash + Eq, V: Into<Value>> From<HashMap<S, V>> for Value {
-    fn from(val: HashMap<S, V>) -> Value {
+#[cfg(feature = "std")]
+impl<S: Into<String> + Hash + Eq, V: Into<Self>> From<HashMap<S, V>> for Value {
+    fn from(val: HashMap<S, V>) -> Self {
         let table = val.into_iter().map(|(s, v)| (s.into(), v.into())).collect();
 
-        Value::Table(table)
+        Self::Table(table)
     }
 }
 
@@ -318,7 +322,7 @@ pub trait Sealed {}
 impl Sealed for usize {}
 impl Sealed for str {}
 impl Sealed for String {}
-impl<'a, T: Sealed + ?Sized> Sealed for &'a T {}
+impl<T: Sealed + ?Sized> Sealed for &T {}
 
 impl Index for usize {
     fn index<'a>(&self, val: &'a Value) -> Option<&'a Value> {
@@ -362,9 +366,9 @@ impl Index for String {
     }
 }
 
-impl<'s, T: ?Sized> Index for &'s T
+impl<T> Index for &T
 where
-    T: Index,
+    T: Index + ?Sized,
 {
     fn index<'a>(&self, val: &'a Value) -> Option<&'a Value> {
         (**self).index(val)
@@ -388,10 +392,11 @@ impl fmt::Display for Value {
 }
 
 #[cfg(feature = "parse")]
-impl std::str::FromStr for Value {
+impl core::str::FromStr for Value {
     type Err = crate::de::Error;
-    fn from_str(s: &str) -> Result<Value, Self::Err> {
-        crate::from_str(s)
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use serde::Deserialize as _;
+        Self::deserialize(crate::de::ValueDeserializer::parse(s)?)
     }
 }
 
@@ -400,50 +405,20 @@ impl ser::Serialize for Value {
     where
         S: ser::Serializer,
     {
-        use serde::ser::SerializeMap;
-
         match *self {
-            Value::String(ref s) => serializer.serialize_str(s),
-            Value::Integer(i) => serializer.serialize_i64(i),
-            Value::Float(f) => serializer.serialize_f64(f),
-            Value::Boolean(b) => serializer.serialize_bool(b),
-            Value::Datetime(ref s) => s.serialize(serializer),
-            Value::Array(ref a) => a.serialize(serializer),
-            Value::Table(ref t) => {
-                let mut map = serializer.serialize_map(Some(t.len()))?;
-                // Be sure to visit non-tables first (and also non
-                // array-of-tables) as all keys must be emitted first.
-                for (k, v) in t {
-                    if !v.is_table() && !v.is_array()
-                        || (v
-                            .as_array()
-                            .map(|a| !a.iter().any(|v| v.is_table()))
-                            .unwrap_or(false))
-                    {
-                        map.serialize_entry(k, v)?;
-                    }
-                }
-                for (k, v) in t {
-                    if v.as_array()
-                        .map(|a| a.iter().any(|v| v.is_table()))
-                        .unwrap_or(false)
-                    {
-                        map.serialize_entry(k, v)?;
-                    }
-                }
-                for (k, v) in t {
-                    if v.is_table() {
-                        map.serialize_entry(k, v)?;
-                    }
-                }
-                map.end()
-            }
+            Self::String(ref s) => serializer.serialize_str(s),
+            Self::Integer(i) => serializer.serialize_i64(i),
+            Self::Float(f) => serializer.serialize_f64(f),
+            Self::Boolean(b) => serializer.serialize_bool(b),
+            Self::Datetime(ref s) => s.serialize(serializer),
+            Self::Array(ref a) => a.serialize(serializer),
+            Self::Table(ref t) => t.serialize(serializer),
         }
     }
 }
 
 impl<'de> de::Deserialize<'de> for Value {
-    fn deserialize<D>(deserializer: D) -> Result<Value, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
     {
@@ -465,7 +440,7 @@ impl<'de> de::Deserialize<'de> for Value {
             }
 
             fn visit_u64<E: de::Error>(self, value: u64) -> Result<Value, E> {
-                if value <= i64::max_value() as u64 {
+                if i64::try_from(value).is_ok() {
                     Ok(Value::Integer(value as i64))
                 } else {
                     Err(de::Error::custom("u64 value was too large"))
@@ -514,23 +489,20 @@ impl<'de> de::Deserialize<'de> for Value {
             where
                 V: de::MapAccess<'de>,
             {
-                let mut key = String::new();
-                let datetime = visitor.next_key_seed(DatetimeOrTable { key: &mut key })?;
-                match datetime {
-                    Some(true) => {
-                        let date: datetime::DatetimeFromString = visitor.next_value()?;
-                        return Ok(Value::Datetime(date.value));
+                let key = match toml_datetime::de::VisitMap::next_key_seed(&mut visitor)? {
+                    Some(toml_datetime::de::VisitMap::Datetime(datetime)) => {
+                        return Ok(Value::Datetime(datetime));
                     }
                     None => return Ok(Value::Table(Table::new())),
-                    Some(false) => {}
-                }
+                    Some(toml_datetime::de::VisitMap::Key(key)) => key,
+                };
                 let mut map = Table::new();
-                map.insert(key, visitor.next_value()?);
+                map.insert(key.into_owned(), visitor.next_value()?);
                 while let Some(key) = visitor.next_key::<String>()? {
                     if let crate::map::Entry::Vacant(vacant) = map.entry(&key) {
                         vacant.insert(visitor.next_value()?);
                     } else {
-                        let msg = format!("duplicate key: `{}`", key);
+                        let msg = format!("duplicate key: `{key}`");
                         return Err(de::Error::custom(msg));
                     }
                 }
@@ -551,12 +523,12 @@ impl<'de> de::Deserializer<'de> for Value {
         V: de::Visitor<'de>,
     {
         match self {
-            Value::Boolean(v) => visitor.visit_bool(v),
-            Value::Integer(n) => visitor.visit_i64(n),
-            Value::Float(n) => visitor.visit_f64(n),
-            Value::String(v) => visitor.visit_string(v),
-            Value::Datetime(v) => visitor.visit_string(v.to_string()),
-            Value::Array(v) => {
+            Self::Boolean(v) => visitor.visit_bool(v),
+            Self::Integer(n) => visitor.visit_i64(n),
+            Self::Float(n) => visitor.visit_f64(n),
+            Self::String(v) => visitor.visit_string(v),
+            Self::Datetime(v) => visitor.visit_string(v.to_string()),
+            Self::Array(v) => {
                 let len = v.len();
                 let mut deserializer = SeqDeserializer::new(v);
                 let seq = visitor.visit_seq(&mut deserializer)?;
@@ -567,7 +539,7 @@ impl<'de> de::Deserializer<'de> for Value {
                     Err(de::Error::invalid_length(len, &"fewer elements in array"))
                 }
             }
-            Value::Table(v) => {
+            Self::Table(v) => {
                 let len = v.len();
                 let mut deserializer = MapDeserializer::new(v);
                 let map = visitor.visit_map(&mut deserializer)?;
@@ -592,16 +564,17 @@ impl<'de> de::Deserializer<'de> for Value {
         V: de::Visitor<'de>,
     {
         match self {
-            Value::String(variant) => visitor.visit_enum(variant.into_deserializer()),
-            Value::Table(variant) => {
-                use de::Error;
+            Self::String(variant) => visitor.visit_enum(variant.into_deserializer()),
+            Self::Table(variant) => {
                 if variant.is_empty() {
                     Err(crate::de::Error::custom(
                         "wanted exactly 1 element, found 0 elements",
+                        None,
                     ))
                 } else if variant.len() != 1 {
                     Err(crate::de::Error::custom(
                         "wanted exactly 1 element, more than 1 element",
+                        None,
                     ))
                 } else {
                     let deserializer = MapDeserializer::new(variant);
@@ -642,13 +615,13 @@ impl<'de> de::Deserializer<'de> for Value {
     }
 }
 
-struct SeqDeserializer {
+pub(crate) struct SeqDeserializer {
     iter: vec::IntoIter<Value>,
 }
 
 impl SeqDeserializer {
     fn new(vec: Vec<Value>) -> Self {
-        SeqDeserializer {
+        Self {
             iter: vec.into_iter(),
         }
     }
@@ -675,14 +648,14 @@ impl<'de> de::SeqAccess<'de> for SeqDeserializer {
     }
 }
 
-struct MapDeserializer {
+pub(crate) struct MapDeserializer {
     iter: <Table as IntoIterator>::IntoIter,
     value: Option<(String, Value)>,
 }
 
 impl MapDeserializer {
     fn new(map: Table) -> Self {
-        MapDeserializer {
+        Self {
             iter: map.into_iter(),
             value: None,
         }
@@ -733,7 +706,7 @@ impl<'de> de::EnumAccess<'de> for MapDeserializer {
 
     fn variant_seed<V>(mut self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
     where
-        V: serde::de::DeserializeSeed<'de>,
+        V: de::DeserializeSeed<'de>,
     {
         use de::Error;
         let (key, value) = match self.iter.next() {
@@ -760,11 +733,11 @@ pub(crate) struct MapEnumDeserializer {
 
 impl MapEnumDeserializer {
     pub(crate) fn new(value: Value) -> Self {
-        MapEnumDeserializer { value }
+        Self { value }
     }
 }
 
-impl<'de> serde::de::VariantAccess<'de> for MapEnumDeserializer {
+impl<'de> de::VariantAccess<'de> for MapEnumDeserializer {
     type Error = crate::de::Error;
 
     fn unit_variant(self) -> Result<(), Self::Error> {
@@ -793,22 +766,22 @@ impl<'de> serde::de::VariantAccess<'de> for MapEnumDeserializer {
 
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
     where
-        T: serde::de::DeserializeSeed<'de>,
+        T: de::DeserializeSeed<'de>,
     {
         seed.deserialize(self.value.into_deserializer())
     }
 
     fn tuple_variant<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: serde::de::Visitor<'de>,
+        V: de::Visitor<'de>,
     {
         use de::Error;
         match self.value {
             Value::Array(values) => {
                 if values.len() == len {
-                    serde::de::Deserializer::deserialize_seq(values.into_deserializer(), visitor)
+                    de::Deserializer::deserialize_seq(values.into_deserializer(), visitor)
                 } else {
-                    Err(Error::custom(format!("expected tuple with length {}", len)))
+                    Err(Error::custom(format!("expected tuple with length {len}")))
                 }
             }
             Value::Table(values) => {
@@ -818,20 +791,16 @@ impl<'de> serde::de::VariantAccess<'de> for MapEnumDeserializer {
                     .map(|(index, (key, value))| match key.parse::<usize>() {
                         Ok(key_index) if key_index == index => Ok(value),
                         Ok(_) | Err(_) => Err(Error::custom(format!(
-                            "expected table key `{}`, but was `{}`",
-                            index, key
+                            "expected table key `{index}`, but was `{key}`"
                         ))),
                     })
                     .collect();
                 let tuple_values = tuple_values?;
 
                 if tuple_values.len() == len {
-                    serde::de::Deserializer::deserialize_seq(
-                        tuple_values.into_deserializer(),
-                        visitor,
-                    )
+                    de::Deserializer::deserialize_seq(tuple_values.into_deserializer(), visitor)
                 } else {
-                    Err(Error::custom(format!("expected tuple with length {}", len)))
+                    Err(Error::custom(format!("expected tuple with length {len}")))
                 }
             }
             e => Err(Error::custom(format!(
@@ -847,9 +816,9 @@ impl<'de> serde::de::VariantAccess<'de> for MapEnumDeserializer {
         visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
-        V: serde::de::Visitor<'de>,
+        V: de::Visitor<'de>,
     {
-        serde::de::Deserializer::deserialize_struct(
+        de::Deserializer::deserialize_struct(
             self.value.into_deserializer(),
             "", // TODO: this should be the variant name
             fields,
@@ -858,7 +827,7 @@ impl<'de> serde::de::VariantAccess<'de> for MapEnumDeserializer {
     }
 }
 
-impl<'de> de::IntoDeserializer<'de, crate::de::Error> for Value {
+impl IntoDeserializer<'_, crate::de::Error> for Value {
     type Deserializer = Self;
 
     fn into_deserializer(self) -> Self {
@@ -866,7 +835,7 @@ impl<'de> de::IntoDeserializer<'de, crate::de::Error> for Value {
     }
 }
 
-struct ValueSerializer;
+pub(crate) struct ValueSerializer;
 
 impl ser::Serializer for ValueSerializer {
     type Ok = Value;
@@ -913,7 +882,7 @@ impl ser::Serializer for ValueSerializer {
     }
 
     fn serialize_u64(self, value: u64) -> Result<Value, crate::ser::Error> {
-        if value <= i64::max_value() as u64 {
+        if i64::try_from(value).is_ok() {
             self.serialize_i64(value as i64)
         } else {
             Err(ser::Error::custom("u64 value was too large"))
@@ -964,18 +933,18 @@ impl ser::Serializer for ValueSerializer {
         self.serialize_str(_variant)
     }
 
-    fn serialize_newtype_struct<T: ?Sized>(
+    fn serialize_newtype_struct<T>(
         self,
         _name: &'static str,
         value: &T,
     ) -> Result<Value, crate::ser::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         value.serialize(self)
     }
 
-    fn serialize_newtype_variant<T: ?Sized>(
+    fn serialize_newtype_variant<T>(
         self,
         _name: &'static str,
         _variant_index: u32,
@@ -983,9 +952,9 @@ impl ser::Serializer for ValueSerializer {
         value: &T,
     ) -> Result<Value, crate::ser::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
-        let value = value.serialize(ValueSerializer)?;
+        let value = value.serialize(Self)?;
         let mut table = Table::new();
         table.insert(variant.to_owned(), value);
         Ok(table.into())
@@ -995,9 +964,9 @@ impl ser::Serializer for ValueSerializer {
         Err(crate::ser::Error::unsupported_none())
     }
 
-    fn serialize_some<T: ?Sized>(self, value: &T) -> Result<Value, crate::ser::Error>
+    fn serialize_some<T>(self, value: &T) -> Result<Value, crate::ser::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         value.serialize(self)
     }
@@ -1032,10 +1001,7 @@ impl ser::Serializer for ValueSerializer {
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, crate::ser::Error> {
         Ok(ValueSerializeMap {
-            ser: SerializeMap {
-                map: Table::new(),
-                next_key: None,
-            },
+            ser: crate::table::SerializeMap::new(),
         })
     }
 
@@ -1058,184 +1024,7 @@ impl ser::Serializer for ValueSerializer {
     }
 }
 
-pub(crate) struct TableSerializer;
-
-impl ser::Serializer for TableSerializer {
-    type Ok = Table;
-    type Error = crate::ser::Error;
-
-    type SerializeSeq = ser::Impossible<Table, crate::ser::Error>;
-    type SerializeTuple = ser::Impossible<Table, crate::ser::Error>;
-    type SerializeTupleStruct = ser::Impossible<Table, crate::ser::Error>;
-    type SerializeTupleVariant = ser::Impossible<Table, crate::ser::Error>;
-    type SerializeMap = SerializeMap;
-    type SerializeStruct = SerializeMap;
-    type SerializeStructVariant = ser::Impossible<Table, crate::ser::Error>;
-
-    fn serialize_bool(self, _value: bool) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_i8(self, _value: i8) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_i16(self, _value: i16) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_i32(self, _value: i32) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_i64(self, _value: i64) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_u8(self, _value: u8) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_u16(self, _value: u16) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_u32(self, _value: u32) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_u64(self, _value: u64) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_f32(self, _value: f32) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_f64(self, _value: f64) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_char(self, _value: char) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_str(self, _value: &str) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_bytes(self, _value: &[u8]) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_unit(self) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_unit_variant(
-        self,
-        name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-    ) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(Some(name)))
-    }
-
-    fn serialize_newtype_struct<T: ?Sized>(
-        self,
-        _name: &'static str,
-        value: &T,
-    ) -> Result<Table, crate::ser::Error>
-    where
-        T: ser::Serialize,
-    {
-        value.serialize(self)
-    }
-
-    fn serialize_newtype_variant<T: ?Sized>(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        variant: &'static str,
-        value: &T,
-    ) -> Result<Table, crate::ser::Error>
-    where
-        T: ser::Serialize,
-    {
-        let value = value.serialize(ValueSerializer)?;
-        let mut table = Table::new();
-        table.insert(variant.to_owned(), value);
-        Ok(table)
-    }
-
-    fn serialize_none(self) -> Result<Table, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_none())
-    }
-
-    fn serialize_some<T: ?Sized>(self, value: &T) -> Result<Table, crate::ser::Error>
-    where
-        T: ser::Serialize,
-    {
-        value.serialize(self)
-    }
-
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(None))
-    }
-
-    fn serialize_tuple_struct(
-        self,
-        name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleStruct, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(Some(name)))
-    }
-
-    fn serialize_tuple_variant(
-        self,
-        name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleVariant, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(Some(name)))
-    }
-
-    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, crate::ser::Error> {
-        Ok(SerializeMap {
-            map: Table::new(),
-            next_key: None,
-        })
-    }
-
-    fn serialize_struct(
-        self,
-        _name: &'static str,
-        len: usize,
-    ) -> Result<Self::SerializeStruct, crate::ser::Error> {
-        self.serialize_map(Some(len))
-    }
-
-    fn serialize_struct_variant(
-        self,
-        name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStructVariant, crate::ser::Error> {
-        Err(crate::ser::Error::unsupported_type(Some(name)))
-    }
-}
-
-struct ValueSerializeVec {
+pub(crate) struct ValueSerializeVec {
     vec: Vec<Value>,
 }
 
@@ -1243,9 +1032,9 @@ impl ser::SerializeSeq for ValueSerializeVec {
     type Ok = Value;
     type Error = crate::ser::Error;
 
-    fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<(), crate::ser::Error>
+    fn serialize_element<T>(&mut self, value: &T) -> Result<(), crate::ser::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         self.vec.push(Value::try_from(value)?);
         Ok(())
@@ -1260,9 +1049,9 @@ impl ser::SerializeTuple for ValueSerializeVec {
     type Ok = Value;
     type Error = crate::ser::Error;
 
-    fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<(), crate::ser::Error>
+    fn serialize_element<T>(&mut self, value: &T) -> Result<(), crate::ser::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         ser::SerializeSeq::serialize_element(self, value)
     }
@@ -1276,9 +1065,9 @@ impl ser::SerializeTupleStruct for ValueSerializeVec {
     type Ok = Value;
     type Error = crate::ser::Error;
 
-    fn serialize_field<T: ?Sized>(&mut self, value: &T) -> Result<(), crate::ser::Error>
+    fn serialize_field<T>(&mut self, value: &T) -> Result<(), crate::ser::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         ser::SerializeSeq::serialize_element(self, value)
     }
@@ -1292,9 +1081,9 @@ impl ser::SerializeTupleVariant for ValueSerializeVec {
     type Ok = Value;
     type Error = crate::ser::Error;
 
-    fn serialize_field<T: ?Sized>(&mut self, value: &T) -> Result<(), crate::ser::Error>
+    fn serialize_field<T>(&mut self, value: &T) -> Result<(), crate::ser::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         ser::SerializeSeq::serialize_element(self, value)
     }
@@ -1304,88 +1093,24 @@ impl ser::SerializeTupleVariant for ValueSerializeVec {
     }
 }
 
-pub(crate) struct SerializeMap {
-    map: Table,
-    next_key: Option<String>,
-}
-
-impl ser::SerializeMap for SerializeMap {
-    type Ok = Table;
-    type Error = crate::ser::Error;
-
-    fn serialize_key<T: ?Sized>(&mut self, key: &T) -> Result<(), crate::ser::Error>
-    where
-        T: ser::Serialize,
-    {
-        match Value::try_from(key)? {
-            Value::String(s) => self.next_key = Some(s),
-            _ => return Err(crate::ser::Error::key_not_string()),
-        };
-        Ok(())
-    }
-
-    fn serialize_value<T: ?Sized>(&mut self, value: &T) -> Result<(), crate::ser::Error>
-    where
-        T: ser::Serialize,
-    {
-        let key = self.next_key.take();
-        let key = key.expect("serialize_value called before serialize_key");
-        match Value::try_from(value) {
-            Ok(value) => {
-                self.map.insert(key, value);
-            }
-            Err(crate::ser::Error {
-                inner: crate::edit::ser::Error::UnsupportedNone,
-            }) => {}
-            Err(e) => return Err(e),
-        }
-        Ok(())
-    }
-
-    fn end(self) -> Result<Table, crate::ser::Error> {
-        Ok(self.map)
-    }
-}
-
-impl ser::SerializeStruct for SerializeMap {
-    type Ok = Table;
-    type Error = crate::ser::Error;
-
-    fn serialize_field<T: ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> Result<(), crate::ser::Error>
-    where
-        T: ser::Serialize,
-    {
-        ser::SerializeMap::serialize_key(self, key)?;
-        ser::SerializeMap::serialize_value(self, value)
-    }
-
-    fn end(self) -> Result<Table, crate::ser::Error> {
-        ser::SerializeMap::end(self)
-    }
-}
-
-struct ValueSerializeMap {
-    ser: SerializeMap,
+pub(crate) struct ValueSerializeMap {
+    ser: crate::table::SerializeMap,
 }
 
 impl ser::SerializeMap for ValueSerializeMap {
     type Ok = Value;
     type Error = crate::ser::Error;
 
-    fn serialize_key<T: ?Sized>(&mut self, key: &T) -> Result<(), crate::ser::Error>
+    fn serialize_key<T>(&mut self, key: &T) -> Result<(), crate::ser::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         self.ser.serialize_key(key)
     }
 
-    fn serialize_value<T: ?Sized>(&mut self, value: &T) -> Result<(), crate::ser::Error>
+    fn serialize_value<T>(&mut self, value: &T) -> Result<(), crate::ser::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         self.ser.serialize_value(value)
     }
@@ -1399,13 +1124,9 @@ impl ser::SerializeStruct for ValueSerializeMap {
     type Ok = Value;
     type Error = crate::ser::Error;
 
-    fn serialize_field<T: ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> Result<(), crate::ser::Error>
+    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), crate::ser::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         ser::SerializeMap::serialize_key(self, key)?;
         ser::SerializeMap::serialize_value(self, value)
@@ -1416,57 +1137,10 @@ impl ser::SerializeStruct for ValueSerializeMap {
     }
 }
 
-struct DatetimeOrTable<'a> {
-    key: &'a mut String,
-}
-
-impl<'a, 'de> de::DeserializeSeed<'de> for DatetimeOrTable<'a> {
-    type Value = bool;
-
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        deserializer.deserialize_any(self)
-    }
-}
-
-impl<'a, 'de> de::Visitor<'de> for DatetimeOrTable<'a> {
-    type Value = bool;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a string key")
-    }
-
-    fn visit_str<E>(self, s: &str) -> Result<bool, E>
-    where
-        E: de::Error,
-    {
-        if s == datetime::FIELD {
-            Ok(true)
-        } else {
-            self.key.push_str(s);
-            Ok(false)
-        }
-    }
-
-    fn visit_string<E>(self, s: String) -> Result<bool, E>
-    where
-        E: de::Error,
-    {
-        if s == datetime::FIELD {
-            Ok(true)
-        } else {
-            *self.key = s;
-            Ok(false)
-        }
-    }
-}
-
 type ValueSerializeTupleVariant = ValueSerializeVariant<ValueSerializeVec>;
 type ValueSerializeStructVariant = ValueSerializeVariant<ValueSerializeMap>;
 
-struct ValueSerializeVariant<T> {
+pub(crate) struct ValueSerializeVariant<T> {
     variant: &'static str,
     inner: T,
 }
@@ -1487,49 +1161,46 @@ impl ValueSerializeVariant<ValueSerializeMap> {
         Self {
             variant,
             inner: ValueSerializeMap {
-                ser: SerializeMap {
-                    map: Table::with_capacity(len),
-                    next_key: None,
-                },
+                ser: crate::table::SerializeMap::with_capacity(len),
             },
         }
     }
 }
 
-impl serde::ser::SerializeTupleVariant for ValueSerializeVariant<ValueSerializeVec> {
-    type Ok = crate::Value;
+impl ser::SerializeTupleVariant for ValueSerializeVariant<ValueSerializeVec> {
+    type Ok = Value;
     type Error = crate::ser::Error;
 
-    fn serialize_field<T: ?Sized>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
-        T: serde::ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
-        serde::ser::SerializeSeq::serialize_element(&mut self.inner, value)
+        ser::SerializeSeq::serialize_element(&mut self.inner, value)
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        let inner = serde::ser::SerializeSeq::end(self.inner)?;
+        let inner = ser::SerializeSeq::end(self.inner)?;
         let mut table = Table::new();
         table.insert(self.variant.to_owned(), inner);
         Ok(Value::Table(table))
     }
 }
 
-impl serde::ser::SerializeStructVariant for ValueSerializeVariant<ValueSerializeMap> {
-    type Ok = crate::Value;
+impl ser::SerializeStructVariant for ValueSerializeVariant<ValueSerializeMap> {
+    type Ok = Value;
     type Error = crate::ser::Error;
 
     #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where
-        T: serde::ser::Serialize + ?Sized,
+        T: ser::Serialize + ?Sized,
     {
-        serde::ser::SerializeStruct::serialize_field(&mut self.inner, key, value)
+        ser::SerializeStruct::serialize_field(&mut self.inner, key, value)
     }
 
     #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        let inner = serde::ser::SerializeStruct::end(self.inner)?;
+        let inner = ser::SerializeStruct::end(self.inner)?;
         let mut table = Table::new();
         table.insert(self.variant.to_owned(), inner);
         Ok(Value::Table(table))

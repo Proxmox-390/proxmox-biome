@@ -16,15 +16,58 @@ use alloc::vec::Vec;
 use alloc::boxed::Box;
 
 use super::bitmap_store::{bit, key, BitmapStore, BITMAP_LENGTH};
+use super::Interval;
+
+pub(crate) const ARRAY_ELEMENT_BYTES: usize = 2;
 
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) struct ArrayStore {
     vec: Vec<u16>,
 }
 
+/// Return the first contiguous range of elements in a sorted slice.
+pub(crate) fn first_contiguous_range_len(slice: &[u16]) -> usize {
+    let [first, rest @ ..] = slice else {
+        // Explicitly empty range
+        return 0;
+    };
+    let len = rest.partition_point(|item| {
+        let item_ptr = core::ptr::addr_of!(*item);
+        // SAFETY: `item` is guaranteed to be in bounds of `slice`.
+        let elem_distance = usize::try_from(unsafe { item_ptr.offset_from(first) }).unwrap();
+        let value_distance = item.checked_sub(*first).expect("array must be sorted");
+        elem_distance == usize::from(value_distance)
+    });
+    len + 1 // +1 for the first element
+}
+
+/// Return the last contiguous range of elements in a sorted slice.
+pub(crate) fn last_contiguous_range_len(slice: &[u16]) -> usize {
+    let [rest @ .., last] = slice else {
+        // Explicitly empty range
+        return 0;
+    };
+    let last_ptr = core::ptr::addr_of!(*last);
+    let len_from_start = rest.partition_point(|item| {
+        // SAFETY: `item` is guaranteed to be in bounds of `slice`.
+        let elem_distance = usize::try_from(unsafe { last_ptr.offset_from(item) }).unwrap();
+        let value_distance = last.checked_sub(*item).expect("array must be sorted");
+        elem_distance != usize::from(value_distance)
+    });
+    slice.len() - len_from_start
+}
+
 impl ArrayStore {
     pub fn new() -> ArrayStore {
         ArrayStore { vec: vec![] }
+    }
+
+    pub fn serialized_byte_size(cardinality: u64) -> usize {
+        cardinality as usize * ARRAY_ELEMENT_BYTES
+    }
+
+    pub fn byte_size(&self) -> usize {
+        Self::serialized_byte_size(self.len())
     }
 
     #[cfg(feature = "std")]
@@ -107,7 +150,7 @@ impl ArrayStore {
     }
 
     pub fn push(&mut self, index: u16) -> bool {
-        if self.max().map_or(true, |max| max < index) {
+        if self.max().is_none_or(|max| max < index) {
             self.vec.push(index);
             true
         } else {
@@ -221,6 +264,15 @@ impl ArrayStore {
         visitor.into_inner()
     }
 
+    pub fn intersection_len_interval(&self, interval: &Interval) -> u64 {
+        if interval.is_full() {
+            return self.len();
+        }
+        let start_id = self.vec.partition_point(|&f| f < interval.start());
+        let end_id = self.vec.partition_point(|&f| f <= interval.end());
+        (end_id.saturating_sub(start_id)) as u64
+    }
+
     pub fn to_bitmap_store(&self) -> BitmapStore {
         let mut bits = Box::new([0; BITMAP_LENGTH]);
         let len = self.len();
@@ -259,7 +311,7 @@ impl ArrayStore {
         self.vec.get(n as usize).cloned()
     }
 
-    pub fn iter(&self) -> core::slice::Iter<u16> {
+    pub fn iter(&'_ self) -> core::slice::Iter<'_, u16> {
         self.vec.iter()
     }
 
@@ -286,6 +338,23 @@ impl ArrayStore {
             pos += f(val) as usize;
         }
         self.vec.truncate(pos);
+    }
+
+    pub(crate) fn internal_validate(&self) -> Result<(), &'static str> {
+        if self.vec.is_empty() {
+            return Err("zero cardinality in array container");
+        }
+        if self.vec.len() > super::ARRAY_LIMIT as usize {
+            return Err("array cardinality exceeds ARRAY_LIMIT");
+        }
+        for window in self.vec.windows(2) {
+            let &[first, second] = window else { unreachable!() };
+            if first >= second {
+                return Err("array elements not strictly increasing");
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -385,7 +454,7 @@ impl BitAndAssign<&Self> for ArrayStore {
             let mut i = 0;
             self.retain(|x| {
                 i += rhs.iter().skip(i).position(|y| *y >= x).unwrap_or(rhs.vec.len());
-                rhs.vec.get(i).map_or(false, |y| x == *y)
+                rhs.vec.get(i).is_some_and(|y| x == *y)
             });
         }
     }
@@ -424,7 +493,7 @@ impl SubAssign<&Self> for ArrayStore {
             let mut i = 0;
             self.retain(|x| {
                 i += rhs.iter().skip(i).position(|y| *y >= x).unwrap_or(rhs.vec.len());
-                rhs.vec.get(i).map_or(true, |y| x != *y)
+                rhs.vec.get(i).is_none_or(|y| x != *y)
             });
         }
     }
@@ -460,6 +529,7 @@ mod tests {
         match s {
             Store::Array(vec) => vec.vec,
             Store::Bitmap(bits) => bits.to_array_store().vec,
+            Store::Run(runs) => runs.iter().collect(),
         }
     }
 
@@ -467,6 +537,7 @@ mod tests {
         match s {
             Store::Array(vec) => Store::Bitmap(vec.to_bitmap_store()),
             Store::Bitmap(..) => s,
+            Store::Run(runs) => Store::Bitmap(runs.to_bitmap()),
         }
     }
 

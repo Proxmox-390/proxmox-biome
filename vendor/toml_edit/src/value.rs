@@ -1,13 +1,14 @@
 use std::iter::FromIterator;
 use std::str::FromStr;
 
-use toml_datetime::*;
+use toml_datetime::{Date, Datetime, Time};
 
 use crate::key::Key;
 use crate::repr::{Decor, Formatted};
 use crate::{Array, InlineTable, InternalString, RawString};
 
-/// Representation of a TOML Value (as part of a Key/Value Pair).
+/// For [`Key`]/Value pairs under a [`Table`][crate::Table] header or inside another
+/// Value
 #[derive(Debug, Clone)]
 pub enum Value {
     /// A string value.
@@ -49,7 +50,7 @@ impl Value {
         }
     }
 
-    /// Returns true iff `self` is a string.
+    /// Returns true if `self` is a string.
     pub fn is_str(&self) -> bool {
         self.as_str().is_some()
     }
@@ -62,7 +63,7 @@ impl Value {
         }
     }
 
-    /// Returns true iff `self` is an integer.
+    /// Returns true if `self` is an integer.
     pub fn is_integer(&self) -> bool {
         self.as_integer().is_some()
     }
@@ -75,7 +76,7 @@ impl Value {
         }
     }
 
-    /// Returns true iff `self` is a float.
+    /// Returns true if `self` is a float.
     pub fn is_float(&self) -> bool {
         self.as_float().is_some()
     }
@@ -88,7 +89,7 @@ impl Value {
         }
     }
 
-    /// Returns true iff `self` is a boolean.
+    /// Returns true if `self` is a boolean.
     pub fn is_bool(&self) -> bool {
         self.as_bool().is_some()
     }
@@ -101,7 +102,7 @@ impl Value {
         }
     }
 
-    /// Returns true iff `self` is a date-time.
+    /// Returns true if `self` is a date-time.
     pub fn is_datetime(&self) -> bool {
         self.as_datetime().is_some()
     }
@@ -122,7 +123,7 @@ impl Value {
         }
     }
 
-    /// Returns true iff `self` is an array.
+    /// Returns true if `self` is an array.
     pub fn is_array(&self) -> bool {
         self.as_array().is_some()
     }
@@ -143,7 +144,7 @@ impl Value {
         }
     }
 
-    /// Returns true iff `self` is an inline table.
+    /// Returns true if `self` is an inline table.
     pub fn is_inline_table(&self) -> bool {
         self.as_inline_table().is_some()
     }
@@ -240,7 +241,11 @@ impl FromStr for Value {
 
     /// Parses a value from a &str
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        crate::parser::parse_value(s)
+        let mut value = crate::parser::parse_value(s)?;
+        // Only take the repr and not decor, as its probably not intended
+        value.decor_mut().clear();
+        value.despan(s);
+        Ok(value)
     }
 }
 
@@ -373,7 +378,7 @@ mod tests {
 
     #[test]
     fn from_iter_formatting() {
-        let features = vec!["node".to_owned(), "mouth".to_owned()];
+        let features = ["node".to_owned(), "mouth".to_owned()];
         let features: Value = features.iter().cloned().collect();
         assert_eq!(features.to_string(), r#"["node", "mouth"]"#);
     }

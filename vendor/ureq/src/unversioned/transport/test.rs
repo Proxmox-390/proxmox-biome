@@ -53,7 +53,8 @@ impl<In: Transport> Connector<In> for TestConnector {
             buffers,
             tx: tx1,
             rx: SyncReceiver(Mutex::new(rx2)),
-            connected: true,
+            connected_tx: true,
+            connected_rx: true,
         };
 
         Ok(Some(Either::B(transport)))
@@ -193,7 +194,40 @@ fn setup_default_handlers(handlers: &mut Vec<TestHandler>) {
     );
 
     maybe_add(
+        TestHandler::new("/bytes/200000000", |_uri, _req, w| {
+            write!(
+                w,
+                "HTTP/1.1 200 OK\r\n\
+                Content-Type: application/octet-stream\r\n\
+                Content-Length: 100\r\n\
+                \r\n"
+            )?;
+            // We don't actually want 200MB of data in memory.
+            write!(w, "{}", "1".repeat(100))
+        }),
+        handlers,
+    );
+
+    maybe_add(
         TestHandler::new("/get", |_uri, req, w| {
+            write!(
+                w,
+                "HTTP/1.1 200 OK\r\n\
+                Content-Type: application/json\r\n\
+                Content-Length: {}\r\n\
+                \r\n",
+                HTTPBIN_GET.len()
+            )?;
+            if req.method() != Method::HEAD {
+                w.write_all(HTTPBIN_GET.as_bytes())?;
+            }
+            Ok(())
+        }),
+        handlers,
+    );
+
+    maybe_add(
+        TestHandler::new("/?query=foo", |_uri, req, w| {
             write!(
                 w,
                 "HTTP/1.1 200 OK\r\n\
@@ -240,7 +274,37 @@ fn setup_default_handlers(handlers: &mut Vec<TestHandler>) {
     );
 
     maybe_add(
-        TestHandler::new("/post", |_uri, _req, w| {
+        TestHandler::new("/post", |_uri, req, w| {
+            // Check if there's an x-verify-content-type header to verify against
+            if let Some(expected_ct) = req.headers().get("x-verify-content-type") {
+                let expected_ct_str = expected_ct.to_str().unwrap();
+                let actual_ct = req.headers().get("content-type");
+
+                match actual_ct {
+                    Some(ct) => {
+                        let actual_ct_str = ct.to_str().unwrap();
+                        if expected_ct_str.starts_with("multipart/form-data") {
+                            // For multipart, just check it starts with the expected prefix
+                            assert!(
+                                actual_ct_str.starts_with("multipart/form-data; boundary="),
+                                "Expected multipart/form-data with boundary, got: {}",
+                                actual_ct_str
+                            );
+                        } else {
+                            assert_eq!(
+                                actual_ct_str, expected_ct_str,
+                                "Content-Type mismatch: expected '{}', got '{}'",
+                                expected_ct_str, actual_ct_str
+                            );
+                        }
+                    }
+                    None => panic!(
+                        "Expected Content-Type '{}' but no Content-Type header found",
+                        expected_ct_str
+                    ),
+                }
+            }
+
             write!(
                 w,
                 "HTTP/1.1 200 OK\r\n\
@@ -392,6 +456,73 @@ fn setup_default_handlers(handlers: &mut Vec<TestHandler>) {
         handlers,
     );
 
+    maybe_add(
+        TestHandler::new("/1chunk-abort", |_uri, _req, w| {
+            write!(
+                w,
+                "HTTP/1.1 200 OK\r\n\
+                Transfer-Encoding: chunked\r\n\
+                \r\n\
+                2\r\n\
+                OK\r\n\
+                0\r\n<hangup>",
+            )?;
+            Ok(())
+        }),
+        handlers,
+    );
+
+    maybe_add(
+        TestHandler::new("/2chunk-abort", |_uri, _req, w| {
+            write!(
+                w,
+                "HTTP/1.1 200 OK\r\n\
+                Transfer-Encoding: chunked\r\n\
+                \r\n\
+                2\r\n\
+                OK\r\n\
+                0\r\n\
+                \r<hangup>", // missing \n
+            )?;
+            Ok(())
+        }),
+        handlers,
+    );
+
+    maybe_add(
+        TestHandler::new("/3chunk-abort", |_uri, _req, w| {
+            write!(
+                w,
+                "HTTP/1.1 200 OK\r\n\
+                Transfer-Encoding: chunked\r\n\
+                \r\n\
+                2\r\n\
+                OK\r\n\
+                0\r\n\
+                \r\n<hangup>",
+            )?;
+            Ok(())
+        }),
+        handlers,
+    );
+
+    maybe_add(
+        TestHandler::new("/4chunk-abort", |_uri, _req, w| {
+            write!(
+                w,
+                "HTTP/1.1 200 OK\r\n\
+                Transfer-Encoding: chunked\r\n\
+                \r\n\
+                2\r\n\
+                OK\r\n\
+                0\r\n\
+                \r\n",
+            )?;
+            Ok(())
+        }),
+        handlers,
+    );
+
     #[cfg(feature = "charset")]
     {
         let (cow, _, _) =
@@ -471,7 +602,7 @@ impl io::Read for RxRead {
             Ok(v) => v,
             Err(_) => return Ok(0), // remote side is gone
         };
-        assert!(buf.len() > v.len());
+        assert!(buf.len() >= v.len(), "{} > {}", buf.len(), v.len());
         let max = buf.len().min(v.len());
         buf[..max].copy_from_slice(&v[..]);
         Ok(max)
@@ -537,7 +668,8 @@ pub(crate) struct TestTransport {
     buffers: LazyBuffers,
     tx: mpsc::SyncSender<Vec<u8>>,
     rx: SyncReceiver<Vec<u8>>,
-    connected: bool,
+    connected_tx: bool,
+    connected_rx: bool,
 }
 
 impl Transport for TestTransport {
@@ -548,25 +680,45 @@ impl Transport for TestTransport {
     fn transmit_output(&mut self, amount: usize, _timeout: NextTimeout) -> Result<(), Error> {
         let output = &self.buffers.output()[..amount];
         if self.tx.send(output.to_vec()).is_err() {
-            self.connected = false;
+            self.connected_tx = false;
         }
         Ok(())
     }
 
     fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, Error> {
+        if !self.connected_rx {
+            return Err(Error::Io(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "test server is not connected",
+            )));
+        }
+
         let input = self.buffers.input_append_buf();
-        let buf = match self.rx.recv_timeout(timeout.after) {
+        let mut buf = match self.rx.recv_timeout(timeout.after) {
             Ok(v) => v,
             Err(RecvTimeoutError::Timeout) => return Err(Error::Timeout(timeout.reason)),
             Err(RecvTimeoutError::Disconnected) => {
                 trace!("Test server disconnected");
-                self.connected = false;
+                self.connected_rx = false;
                 return Err(Error::Io(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "test server disconnected",
                 )));
             }
         };
+
+        let maybe_hangup = buf
+            .windows(HANGUP.len())
+            .enumerate()
+            .find(|(_, w)| *w == HANGUP)
+            .map(|(pos, _)| pos);
+
+        if let Some(pos) = maybe_hangup {
+            debug!("TEST: Found <hangup>");
+            buf.drain(pos..);
+            self.connected_rx = false;
+        }
+
         assert!(input.len() >= buf.len());
         let max = input.len().min(buf.len());
         input[..max].copy_from_slice(&buf[..]);
@@ -575,7 +727,7 @@ impl Transport for TestTransport {
     }
 
     fn is_open(&mut self) -> bool {
-        self.connected
+        self.connected_tx
     }
 
     fn is_tls(&self) -> bool {
@@ -583,6 +735,8 @@ impl Transport for TestTransport {
         true
     }
 }
+
+const HANGUP: &[u8] = b"<hangup>";
 
 // Workaround for std::mpsc::Receiver not being Sync
 struct SyncReceiver<T>(Mutex<Receiver<T>>);

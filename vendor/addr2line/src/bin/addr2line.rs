@@ -1,3 +1,4 @@
+use fallible_iterator::FallibleIterator;
 use std::borrow::Cow;
 use std::io::{BufRead, Lines, StdinLock, Write};
 use std::path::{Path, PathBuf};
@@ -95,6 +96,7 @@ struct Options<'a> {
     llvm: bool,
     exe: &'a PathBuf,
     sup: Option<&'a PathBuf>,
+    section: Option<&'a String>,
 }
 
 fn main() {
@@ -117,6 +119,13 @@ fn main() {
                 .value_name("filename")
                 .value_parser(clap::value_parser!(PathBuf))
                 .help("Path to supplementary object file."),
+            Arg::new("section")
+                .short('j')
+                .long("section")
+                .value_name("name")
+                .help(
+                    "Read offsets relative to the specified section instead of absolute addresses.",
+                ),
             Arg::new("all")
                 .long("all")
                 .action(ArgAction::SetTrue)
@@ -175,9 +184,15 @@ fn main() {
         llvm: matches.get_flag("llvm"),
         exe: matches.get_one::<PathBuf>("exe").unwrap(),
         sup: matches.get_one::<PathBuf>("sup"),
+        section: matches.get_one::<String>("section"),
     };
 
     let ctx = Loader::new_with_sup(opts.exe, opts.sup).unwrap();
+
+    let section_range = opts.section.map(|section_name| {
+        ctx.get_section_range(section_name.as_bytes())
+            .unwrap_or_else(|| panic!("cannot find section {}", section_name))
+    });
 
     let stdin = std::io::stdin();
     let addrs = if matches.get_flag("all") {
@@ -207,10 +222,24 @@ fn main() {
             }
         }
 
+        // If --section is given, add the section address to probe.
+        let probe = probe.and_then(|probe| {
+            if let Some(section_range) = section_range {
+                if probe < (section_range.end - section_range.begin) {
+                    Some(probe + section_range.begin)
+                } else {
+                    // If addr >= section size, treat it as if no line number information was found.
+                    None
+                }
+            } else {
+                Some(probe)
+            }
+        });
+
         if opts.do_functions || opts.do_inlines {
             let mut printed_anything = false;
             if let Some(probe) = probe {
-                let mut frames = ctx.find_frames(probe).unwrap();
+                let mut frames = ctx.find_frames(probe).unwrap().peekable();
                 let mut first = true;
                 while let Some(frame) = frames.next().unwrap() {
                     if opts.pretty && !first {
@@ -219,15 +248,25 @@ fn main() {
                     first = false;
 
                     if opts.do_functions {
-                        if let Some(func) = frame.function {
+                        // Only use the symbol table if this isn't an inlined function.
+                        let symbol = if matches!(frames.peek(), Ok(None)) {
+                            ctx.find_symbol(probe)
+                        } else {
+                            None
+                        };
+                        if symbol.is_some() {
+                            // Prefer the symbol table over the DWARF name because:
+                            // - the symbol can include a clone suffix
+                            // - llvm may omit the linkage name in the DWARF with -g1
+                            print_function(symbol, None, opts.demangle);
+                        } else if let Some(func) = frame.function {
                             print_function(
                                 func.raw_name().ok().as_deref(),
                                 func.language,
                                 opts.demangle,
                             );
                         } else {
-                            let name = ctx.find_symbol(probe);
-                            print_function(name, None, opts.demangle);
+                            print_function(None, None, opts.demangle);
                         }
 
                         if opts.pretty {

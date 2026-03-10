@@ -3,8 +3,8 @@ use std::io::{self, Read, Stdin};
 use std::net::TcpStream;
 
 use crate::body::{Body, BodyReader};
-use crate::http;
 use crate::util::private::Private;
+use crate::{http, Error};
 
 /// Request body for sending data via POST, PUT and PATCH.
 ///
@@ -18,23 +18,36 @@ use crate::util::private::Private;
 ///
 pub struct SendBody<'a> {
     inner: BodyInner<'a>,
+    size: Option<Result<u64, Error>>,
     ended: bool,
+    content_type: Option<HeaderValue>,
 }
 
 impl<'a> SendBody<'a> {
     /// Creates an empty body.
     pub fn none() -> SendBody<'static> {
-        BodyInner::None.into()
+        (None, BodyInner::None).into()
     }
 
     /// Creates a body from a shared [`Read`] impl.
     pub fn from_reader(reader: &'a mut dyn Read) -> SendBody<'a> {
-        BodyInner::Reader(reader).into()
+        (None, BodyInner::Reader(reader)).into()
     }
 
-    /// Creates a body from an owned [`Read]` impl.
+    /// Creates a body from an owned [`Read`] impl.
     pub fn from_owned_reader(reader: impl Read + 'static) -> SendBody<'static> {
-        BodyInner::OwnedReader(Box::new(reader)).into()
+        (None, BodyInner::OwnedReader(Box::new(reader))).into()
+    }
+
+    #[cfg(feature = "multipart")]
+    pub(crate) fn from_file(file: File) -> SendBody<'static> {
+        let size = lazy_file_size(&file);
+        SendBody {
+            inner: BodyInner::OwnedReader(Box::new(file)),
+            size: Some(size),
+            ended: false,
+            content_type: None,
+        }
     }
 
     /// Creates a body to send as JSON from any [`Serialize`](serde::ser::Serialize) value.
@@ -43,7 +56,16 @@ impl<'a> SendBody<'a> {
         value: &impl serde::ser::Serialize,
     ) -> Result<SendBody<'static>, crate::Error> {
         let json = serde_json::to_vec_pretty(value)?;
-        Ok(BodyInner::ByteVec(io::Cursor::new(json)).into())
+        let len = json.len() as u64;
+        let body: SendBody = (Some(len), BodyInner::ByteVec(io::Cursor::new(json))).into();
+        let body =
+            body.with_content_type(HeaderValue::from_static("application/json; charset=utf-8"));
+        Ok(body)
+    }
+
+    pub(crate) fn with_content_type(mut self, content_type: HeaderValue) -> Self {
+        self.content_type = Some(content_type);
+        self
     }
 
     pub(crate) fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -73,8 +95,38 @@ impl<'a> SendBody<'a> {
         Ok(n)
     }
 
-    pub(crate) fn body_mode(&self) -> BodyMode {
-        self.inner.body_mode()
+    pub(crate) fn body_mode(&mut self) -> Result<BodyMode, Error> {
+        // Lazily surface a potential error now.
+        let size = match self.size {
+            None => None,
+            Some(Ok(v)) => Some(v),
+            Some(Err(_)) => {
+                // unwraps here are ok because we matched exactly this
+                return Err(self.size.take().unwrap().unwrap_err());
+            }
+        };
+
+        match &self.inner {
+            BodyInner::None => return Ok(BodyMode::NoBody),
+            BodyInner::Body(v) => return Ok(v.body_mode()),
+
+            // The others fall through
+            BodyInner::ByteSlice(_) => {}
+            #[cfg(feature = "json")]
+            BodyInner::ByteVec(_) => {}
+            BodyInner::Reader(_) => {}
+            BodyInner::OwnedReader(_) => {}
+        };
+
+        // Any other body mode could be LengthDelimited depending on whether
+        // we have got a size set.
+        let mode = if let Some(size) = size {
+            BodyMode::LengthDelimited(size)
+        } else {
+            BodyMode::Chunked
+        };
+
+        Ok(mode)
     }
 
     /// Turn this `SendBody` into a reader.
@@ -110,6 +162,26 @@ impl<'a> SendBody<'a> {
     pub fn into_reader(self) -> impl Sized + io::Read + 'a {
         ReadAdapter(self)
     }
+
+    #[cfg(feature = "multipart")]
+    pub(crate) fn from_bytes<'b>(bytes: &'b [u8]) -> SendBody<'b> {
+        SendBody {
+            inner: BodyInner::ByteSlice(bytes),
+            size: Some(Ok(bytes.len() as u64)),
+            ended: false,
+            content_type: None,
+        }
+    }
+
+    #[cfg(feature = "multipart")]
+    pub(crate) fn size(&self) -> Option<u64> {
+        self.size.as_ref().and_then(|r| r.as_ref().ok()).copied()
+    }
+
+    /// Get the content type for this body, if any.
+    pub(crate) fn take_content_type(&mut self) -> Option<HeaderValue> {
+        self.content_type.take()
+    }
 }
 
 struct ReadAdapter<'a>(SendBody<'a>);
@@ -121,6 +193,7 @@ impl<'a> io::Read for ReadAdapter<'a> {
 }
 
 use http::Response;
+use ureq_proto::http::HeaderValue;
 use ureq_proto::BodyMode;
 
 /// Trait for common types to send in POST, PUT or PATCH.
@@ -190,7 +263,9 @@ impl<'a> AsSendBody for SendBody<'a> {
                 BodyInner::Body(v) => BodyInner::Reader(v),
                 BodyInner::OwnedReader(v) => BodyInner::Reader(v),
             },
+            size: self.size.take(),
             ended: self.ended,
+            content_type: self.content_type.take(),
         }
     }
 }
@@ -200,99 +275,110 @@ pub(crate) enum BodyInner<'a> {
     ByteSlice(&'a [u8]),
     #[cfg(feature = "json")]
     ByteVec(io::Cursor<Vec<u8>>),
-    Body(BodyReader<'a>),
+    Body(Box<BodyReader<'a>>),
     Reader(&'a mut dyn Read),
     OwnedReader(Box<dyn Read>),
-}
-
-impl<'a> BodyInner<'a> {
-    pub fn body_mode(&self) -> BodyMode {
-        match self {
-            BodyInner::None => BodyMode::NoBody,
-            BodyInner::ByteSlice(v) => BodyMode::LengthDelimited(v.len() as u64),
-            #[cfg(feature = "json")]
-            BodyInner::ByteVec(v) => BodyMode::LengthDelimited(v.get_ref().len() as u64),
-            BodyInner::Body(v) => v.body_mode(),
-            BodyInner::Reader(_) => BodyMode::Chunked,
-            BodyInner::OwnedReader(_) => BodyMode::Chunked,
-        }
-    }
 }
 
 impl Private for &[u8] {}
 impl AsSendBody for &[u8] {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::ByteSlice(self).into()
+        let inner = BodyInner::ByteSlice(self);
+        (Some(self.len() as u64), inner).into()
     }
 }
 
 impl Private for &str {}
 impl AsSendBody for &str {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::ByteSlice((*self).as_ref()).into()
+        let inner = BodyInner::ByteSlice((*self).as_ref());
+        (Some(self.len() as u64), inner).into()
     }
 }
 
 impl Private for String {}
 impl AsSendBody for String {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::ByteSlice((*self).as_ref()).into()
+        let inner = BodyInner::ByteSlice((*self).as_ref());
+        (Some(self.len() as u64), inner).into()
     }
 }
 
 impl Private for Vec<u8> {}
 impl AsSendBody for Vec<u8> {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::ByteSlice((*self).as_ref()).into()
+        let inner = BodyInner::ByteSlice((*self).as_ref());
+        (Some(self.len() as u64), inner).into()
     }
 }
 
 impl Private for &String {}
 impl AsSendBody for &String {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::ByteSlice((*self).as_ref()).into()
+        let inner = BodyInner::ByteSlice((*self).as_ref());
+        (Some(self.len() as u64), inner).into()
     }
 }
 
 impl Private for &Vec<u8> {}
 impl AsSendBody for &Vec<u8> {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::ByteSlice((*self).as_ref()).into()
+        let inner = BodyInner::ByteSlice((*self).as_ref());
+        (Some(self.len() as u64), inner).into()
     }
 }
 
 impl Private for &File {}
 impl AsSendBody for &File {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::Reader(self).into()
-    }
-}
-
-impl Private for &TcpStream {}
-impl AsSendBody for &TcpStream {
-    fn as_body(&mut self) -> SendBody {
-        BodyInner::Reader(self).into()
+        let size = lazy_file_size(self);
+        SendBody {
+            inner: BodyInner::Reader(self),
+            size: Some(size),
+            ended: false,
+            content_type: None,
+        }
     }
 }
 
 impl Private for File {}
 impl AsSendBody for File {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::Reader(self).into()
+        let size = lazy_file_size(self);
+        SendBody {
+            inner: BodyInner::Reader(self),
+            size: Some(size),
+            ended: false,
+            content_type: None,
+        }
+    }
+}
+
+fn lazy_file_size(file: &File) -> Result<u64, Error> {
+    match file.metadata() {
+        Ok(v) => Ok(v.len()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+impl Private for &TcpStream {}
+impl AsSendBody for &TcpStream {
+    fn as_body(&mut self) -> SendBody {
+        (None, BodyInner::Reader(self)).into()
     }
 }
 
 impl Private for TcpStream {}
 impl AsSendBody for TcpStream {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::Reader(self).into()
+        (None, BodyInner::Reader(self)).into()
     }
 }
 
 impl Private for Stdin {}
 impl AsSendBody for Stdin {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::Reader(self).into()
+        (None, BodyInner::Reader(self)).into()
     }
 }
 
@@ -307,15 +393,17 @@ impl Private for UnixStream {}
 #[cfg(target_family = "unix")]
 impl AsSendBody for UnixStream {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::Reader(self).into()
+        (None, BodyInner::Reader(self)).into()
     }
 }
 
-impl<'a> From<BodyInner<'a>> for SendBody<'a> {
-    fn from(inner: BodyInner<'a>) -> Self {
+impl<'a> From<(Option<u64>, BodyInner<'a>)> for SendBody<'a> {
+    fn from((size, inner): (Option<u64>, BodyInner<'a>)) -> Self {
         SendBody {
             inner,
+            size: size.map(Ok),
             ended: false,
+            content_type: None,
         }
     }
 }
@@ -323,27 +411,30 @@ impl<'a> From<BodyInner<'a>> for SendBody<'a> {
 impl Private for Body {}
 impl AsSendBody for Body {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::Body(self.as_reader()).into()
+        let size = self.content_length();
+        (size, BodyInner::Body(Box::new(self.as_reader()))).into()
     }
 }
 
 impl Private for Response<Body> {}
 impl AsSendBody for Response<Body> {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::Body(self.body_mut().as_reader()).into()
+        let size = self.body().content_length();
+        (size, BodyInner::Body(Box::new(self.body_mut().as_reader()))).into()
     }
 }
 
 impl<const N: usize> Private for &[u8; N] {}
 impl<const N: usize> AsSendBody for &[u8; N] {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::ByteSlice(self.as_slice()).into()
+        let inner = BodyInner::ByteSlice((*self).as_ref());
+        (Some(self.len() as u64), inner).into()
     }
 }
 
 impl Private for () {}
 impl AsSendBody for () {
     fn as_body(&mut self) -> SendBody {
-        BodyInner::None.into()
+        (None, BodyInner::None).into()
     }
 }

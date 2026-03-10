@@ -111,8 +111,8 @@ impl AsciiTable {
 
 #[cfg(feature = "auto_table_width")]
 fn default_table_width() -> usize {
-    ::termsize::get()
-        .map(|size| size.cols.into())
+    ::termize::dimensions()
+        .map(|(w, _h)| w)
         .unwrap_or(DEFAULT_WIDTH)
 }
 
