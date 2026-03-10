@@ -3,7 +3,7 @@
 ///
 /// ALso, the module includes implementation to convert rule options to Biome's rule options.
 use biome_deserialize_macros::Deserializable;
-use biome_js_analyze::lint::style::use_filenaming_convention;
+use biome_rule_options::use_filenaming_convention;
 use smallvec::SmallVec;
 
 #[derive(Clone, Debug, Default, Deserializable)]
@@ -13,16 +13,16 @@ pub(crate) struct FilenameCaseOptions {
     ignore: Vec<String>,
     multiple_file_extensions: bool,
 }
-impl From<FilenameCaseOptions> for use_filenaming_convention::FilenamingConventionOptions {
+impl From<FilenameCaseOptions> for use_filenaming_convention::UseFilenamingConventionOptions {
     fn from(val: FilenameCaseOptions) -> Self {
         let filename_cases: Option<use_filenaming_convention::FilenameCases> = val.cases.into();
         Self {
-            strict_case: true,
-            require_ascii: true,
+            strict_case: None,
+            require_ascii: None,
             matching: None,
-            filename_cases: filename_cases.unwrap_or_else(|| {
+            filename_cases: Some(filename_cases.unwrap_or_else(|| {
                 use_filenaming_convention::FilenameCases::from_iter([val.case.into()])
-            }),
+            })),
         }
     }
 }

@@ -2,6 +2,7 @@
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: js/module/arrow/arrow_nested.js
 ---
+
 # Input
 
 ```js
@@ -57,6 +58,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -86,6 +89,7 @@ runtimeAgent.getProperties(
 		return 1;
 	},
 );
+
 ```
 
 ## Output 1
@@ -105,6 +109,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -134,4 +140,5 @@ runtimeAgent.getProperties(
 		return 1;
 	},
 );
+
 ```

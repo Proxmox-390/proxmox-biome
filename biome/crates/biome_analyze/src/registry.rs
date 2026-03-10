@@ -1,6 +1,6 @@
 use crate::{
-    AddVisitor, AnalysisFilter, GroupCategory, QueryMatcher, Rule, RuleCategories, RuleGroup,
-    RuleKey, RuleMetadata, ServiceBag, SignalEntry, Visitor,
+    AddVisitor, AnalysisFilter, GroupCategory, QueryMatcher, Rule, RuleGroup, RuleKey,
+    RuleMetadata, ServiceBag, SignalEntry, Visitor,
     context::RuleContext,
     matcher::{GroupKey, MatchQueryParams},
     query::{QueryKey, Queryable},
@@ -240,7 +240,6 @@ type BuilderResult<L> = (
     ServiceBag,
     Vec<Error>,
     BTreeMap<(Phases, TypeId), Box<dyn Visitor<Language = L>>>,
-    RuleCategories,
 );
 
 impl<L: Language> RuleRegistryBuilder<'_, L> {
@@ -250,7 +249,6 @@ impl<L: Language> RuleRegistryBuilder<'_, L> {
             self.services,
             self.diagnostics,
             self.visitors,
-            self.filter.categories,
         )
     }
 }
@@ -393,10 +391,10 @@ impl<L: Language + Default> RegistryRule<L> {
         where
             R: Rule<Options: Default, Query: Queryable<Output: Clone>> + 'static,
         {
-            if let Some(node) = params.query.downcast_ref::<SyntaxNode<RuleLanguage<R>>>() {
-                if state.suppressions.inner.contains(node) {
-                    return Ok(());
-                }
+            if let Some(node) = params.query.downcast_ref::<SyntaxNode<RuleLanguage<R>>>()
+                && state.suppressions.inner.contains(node)
+            {
+                return Ok(());
             }
 
             // SAFETY: The rule should never get executed in the first place
@@ -406,23 +404,31 @@ impl<L: Language + Default> RegistryRule<L> {
             let globals = params.options.globals();
             let preferred_quote = params.options.preferred_quote();
             let preferred_jsx_quote = params.options.preferred_jsx_quote();
+            let preferred_indentation = params.options.preferred_indentation();
             let jsx_runtime = params.options.jsx_runtime();
-            let css_modules = params.options.css_modules();
+            let jsx_factory = params.options.jsx_factory();
+            let jsx_fragment_factory = params.options.jsx_fragment_factory();
             let options = params.options.rule_options::<R>().unwrap_or_default();
             let ctx = RuleContext::new(
                 &query_result,
                 params.root,
                 params.services,
-                &globals,
+                globals,
                 params.options.file_path.as_path(),
                 &options,
                 preferred_quote,
                 preferred_jsx_quote,
+                preferred_indentation,
                 jsx_runtime,
-                css_modules,
+                jsx_factory,
+                jsx_fragment_factory,
             )?;
 
-            for result in R::run(&ctx) {
+            let rule_timer = crate::profiling::start_rule::<R>();
+            let signals = R::run(&ctx);
+            rule_timer.stop();
+
+            for result in signals {
                 let text_range =
                     R::text_range(&ctx, &result).unwrap_or_else(|| params.query.text_range());
 
@@ -440,7 +446,7 @@ impl<L: Language + Default> RegistryRule<L> {
 
                 params.signal_queue.push(SignalEntry {
                     signal,
-                    rule: RuleKey::rule::<R>(),
+                    rule: RuleKey::rule::<R>().into(),
                     instances,
                     text_range,
                     category: <R::Group as RuleGroup>::Category::CATEGORY,

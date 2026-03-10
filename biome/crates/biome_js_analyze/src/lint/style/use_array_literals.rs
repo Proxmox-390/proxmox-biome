@@ -9,6 +9,7 @@ use biome_js_syntax::{
     JsNewOrCallExpression, JsSyntaxKind, JsVariableDeclarator, T, global_identifier,
 };
 use biome_rowan::{AstNode, AstSeparatedList, BatchMutationExt};
+use biome_rule_options::use_array_literals::UseArrayLiteralsOptions;
 
 use crate::{JsRuleAction, services::semantic::Semantic};
 
@@ -70,7 +71,7 @@ impl Rule for UseArrayLiterals {
     type Query = Semantic<JsNewOrCallExpression>;
     type State = ();
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = UseArrayLiteralsOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
@@ -174,7 +175,7 @@ impl Rule for UseArrayLiterals {
                 && !type_arg.is_primitive_type()
                 && !matches!(type_arg, AnyTsType::TsReferenceType(_))
             {
-                // only wrap the type in parens if its not a literal, primative, or reference
+                // only wrap the type in parens if its not a literal, primitive, or reference
                 make::parenthesized_ts(type_arg).into()
             } else {
                 type_arg
@@ -276,11 +277,11 @@ fn get_type_arg_if_safe(node: &JsNewOrCallExpression) -> Option<AnyTsType> {
         JsNewOrCallExpression::JsCallExpression(expr) => expr.type_arguments(),
     };
     // check there's exactly one type arg
-    if let Some(type_arguments) = type_arguments {
-        if type_arguments.ts_type_argument_list().len() == 1 {
-            let list = type_arguments.ts_type_argument_list();
-            return list.first()?.ok();
-        }
+    if let Some(type_arguments) = type_arguments
+        && type_arguments.ts_type_argument_list().len() == 1
+    {
+        let list = type_arguments.ts_type_argument_list();
+        return list.first()?.ok();
     }
     None
 }

@@ -1,7 +1,6 @@
 ---
 source: crates/biome_js_analyze/tests/spec_tests.rs
 expression: SuppressionComments.js
-snapshot_kind: text
 ---
 # Input
 ```js
@@ -15,7 +14,7 @@ function SuppressionComments1() {
 function SuppressionComments2() {
 	beforeReturn();
 	return;
-	// biome-ignore lint/correctness/noUnreachable: supress warning
+	// biome-ignore lint/correctness/noUnreachable: suppress warning
 	afterReturn();
 }
 

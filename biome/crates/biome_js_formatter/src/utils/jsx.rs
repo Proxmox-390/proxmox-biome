@@ -121,7 +121,7 @@ pub(crate) fn get_wrap_state(node: &JsxTagExpression) -> WrapState {
         | JsSyntaxKind::JSX_EXPRESSION_CHILD
         | JsSyntaxKind::JS_EXPRESSION_STATEMENT
         | JsSyntaxKind::JS_CALL_ARGUMENT_LIST
-        | JsSyntaxKind::JS_EXPRESSION_SNIPPED
+        | JsSyntaxKind::JS_EXPRESSION_SNIPPET
         | JsSyntaxKind::JS_CONDITIONAL_EXPRESSION => WrapState::NoWrap,
         JsSyntaxKind::JS_STATIC_MEMBER_EXPRESSION => {
             let member = JsStaticMemberExpression::unwrap_cast(parent);
@@ -183,7 +183,7 @@ impl Format<JsFormatContext> for JsxRawSpace {
             QuoteStyle::Single => "{' '}",
         };
 
-        write!(f, [text(jsx_space)])
+        write!(f, [token(jsx_space)])
     }
 }
 

@@ -1,3 +1,5 @@
+use crate::fonts::is_function_keyword;
+use crate::utils::is_custom_function;
 use biome_analyze::{
     Ast, Rule, RuleDiagnostic, RuleSource, context::RuleContext, declare_lint_rule,
 };
@@ -5,8 +7,7 @@ use biome_console::markup;
 use biome_css_syntax::CssFunction;
 use biome_diagnostics::Severity;
 use biome_rowan::{AstNode, TextRange};
-
-use crate::utils::{is_custom_function, is_function_keyword};
+use biome_rule_options::no_unknown_function::NoUnknownFunctionOptions;
 
 declare_lint_rule! {
     /// Disallow unknown CSS value functions.
@@ -32,6 +33,28 @@ declare_lint_rule! {
     /// a { transform: scale(1); }
     /// ```
     ///
+    /// ## Options
+    ///
+    /// ### `ignore`
+    ///
+    /// A list of unknown function names to ignore (case-insensitive).
+    ///
+    /// ```json,options
+    /// {
+    ///   "options": {
+    ///     "ignore": [
+    ///       "custom-function"
+    ///     ]
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// #### Valid
+    ///
+    /// ```css,use_options
+    /// a { transform: custom-function(1); }
+    /// ```
+    ///
     pub NoUnknownFunction {
         version: "1.8.0",
         name: "noUnknownFunction",
@@ -51,11 +74,14 @@ impl Rule for NoUnknownFunction {
     type Query = Ast<CssFunction>;
     type State = NoUnknownFunctionState;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoUnknownFunctionOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Option<Self::State> {
         let node = ctx.query();
-        let binding = node.name().ok()?.value_token().ok()?;
+        let binding = node.name().ok().and_then(|name| {
+            name.as_css_identifier()
+                .and_then(|name| name.value_token().ok())
+        })?;
         let function_name = binding.text_trimmed();
 
         // We don't have a semantic model yet, so we can't determine if functions are defined elsewhere.
@@ -65,6 +91,10 @@ impl Rule for NoUnknownFunction {
         }
 
         if is_function_keyword(function_name) {
+            return None;
+        }
+
+        if should_ignore(function_name, ctx.options()) {
             return None;
         }
 
@@ -91,4 +121,13 @@ impl Rule for NoUnknownFunction {
             }),
         )
     }
+}
+
+fn should_ignore(name: &str, options: &NoUnknownFunctionOptions) -> bool {
+    for ignore_pattern in &options.ignore {
+        if name.eq_ignore_ascii_case(ignore_pattern) {
+            return true;
+        }
+    }
+    false
 }

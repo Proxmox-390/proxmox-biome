@@ -10,6 +10,9 @@ impl FormatRule<AnyCssDeclarationOrAtRule> for FormatAnyCssDeclarationOrAtRule {
         match node {
             AnyCssDeclarationOrAtRule::CssAtRule(node) => node.format().fmt(f),
             AnyCssDeclarationOrAtRule::CssDeclarationWithSemicolon(node) => node.format().fmt(f),
+            AnyCssDeclarationOrAtRule::CssEmptyDeclaration(node) => node.format().fmt(f),
+            AnyCssDeclarationOrAtRule::ScssDeclaration(node) => node.format().fmt(f),
+            AnyCssDeclarationOrAtRule::ScssNestingDeclaration(node) => node.format().fmt(f),
         }
     }
 }

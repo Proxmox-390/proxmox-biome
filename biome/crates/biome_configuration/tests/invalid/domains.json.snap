@@ -19,8 +19,13 @@ domains.json:4:7 deserialize ━━━━━━━━━━━━━━━━━
   - test
   - solid
   - next
+  - qwik
   - vue
   - project
+  - tailwind
+  - turborepo
+  - playwright
+  - types
   
 
 

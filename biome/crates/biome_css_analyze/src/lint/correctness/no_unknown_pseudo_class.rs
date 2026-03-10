@@ -1,21 +1,25 @@
 use crate::{
     keywords::{WEBKIT_SCROLLBAR_PSEUDO_CLASSES, WEBKIT_SCROLLBAR_PSEUDO_ELEMENTS},
-    utils::{is_custom_selector, is_known_pseudo_class, is_page_pseudo_class, vendor_prefixed},
+    utils::{
+        is_css_module_pseudo_class, is_custom_selector, is_known_pseudo_class,
+        is_page_pseudo_class, vendor_prefixed,
+    },
 };
 use biome_analyze::{
     Ast, Rule, RuleDiagnostic, RuleSource, context::RuleContext, declare_lint_rule,
 };
 use biome_console::markup;
 use biome_css_syntax::{
-    CssBogusPseudoClass, CssPageSelectorPseudo, CssPseudoClassFunctionCompoundSelector,
-    CssPseudoClassFunctionCompoundSelectorList, CssPseudoClassFunctionIdentifier,
-    CssPseudoClassFunctionNth, CssPseudoClassFunctionRelativeSelectorList,
-    CssPseudoClassFunctionSelector, CssPseudoClassFunctionSelectorList,
-    CssPseudoClassFunctionValueList, CssPseudoClassIdentifier, CssPseudoElementSelector,
-    CssSyntaxToken,
+    CssBogusPseudoClass, CssFileSource, CssPageSelectorPseudo,
+    CssPseudoClassFunctionCompoundSelector, CssPseudoClassFunctionCompoundSelectorList,
+    CssPseudoClassFunctionIdentifier, CssPseudoClassFunctionNth,
+    CssPseudoClassFunctionRelativeSelectorList, CssPseudoClassFunctionSelector,
+    CssPseudoClassFunctionSelectorList, CssPseudoClassFunctionValueList, CssPseudoClassIdentifier,
+    CssPseudoElementSelector, CssSyntaxToken,
 };
 use biome_diagnostics::Severity;
 use biome_rowan::{AstNode, TextRange, declare_node_union};
+use biome_rule_options::no_unknown_pseudo_class::NoUnknownPseudoClassOptions;
 use biome_string_case::StrLikeExtension;
 
 declare_lint_rule! {
@@ -59,6 +63,28 @@ declare_lint_rule! {
     /// input:-moz-placeholder {}
     /// ```
     ///
+    /// ## Options
+    ///
+    /// ### `ignore`
+    ///
+    /// A list of unknown pseudo-class names to ignore (case-insensitive).
+    ///
+    /// ```json,options
+    /// {
+    ///   "options": {
+    ///     "ignore": [
+    ///       "custom-pseudo-class"
+    ///     ]
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// #### Valid
+    ///
+    /// ```css,use_options
+    /// a:custom-pseudo-class {}
+    /// ```
+    ///
     pub NoUnknownPseudoClass {
         version: "1.8.0",
         name: "noUnknownPseudoClass",
@@ -84,75 +110,26 @@ declare_node_union! {
 }
 
 impl AnyPseudoLike {
-    fn name_range(&self) -> Option<TextRange> {
-        Some(match self {
+    fn name(&self) -> Option<CssSyntaxToken> {
+        let ident = match self {
             Self::CssBogusPseudoClass(_) => return None,
-            Self::CssPseudoClassFunctionCompoundSelector(selector) => {
-                let name = selector.name().ok()?;
-                name.text_trimmed_range()
-            }
-            Self::CssPseudoClassFunctionCompoundSelectorList(selector_list) => {
-                let name = selector_list.name().ok()?;
-                name.text_trimmed_range()
-            }
-            Self::CssPseudoClassFunctionIdentifier(ident) => {
-                let name = ident.name_token().ok()?;
-                name.text_trimmed_range()
-            }
-            Self::CssPseudoClassFunctionNth(func_nth) => {
-                let name = func_nth.name().ok()?;
-                name.text_trimmed_range()
-            }
-            Self::CssPseudoClassFunctionRelativeSelectorList(selector_list) => {
-                let name = selector_list.name_token().ok()?;
-                name.text_trimmed_range()
-            }
-            Self::CssPseudoClassFunctionSelector(selector) => {
-                let name = selector.name().ok()?;
-                name.text_trimmed_range()
-            }
-            Self::CssPseudoClassFunctionSelectorList(selector_list) => {
-                let name = selector_list.name().ok()?;
-                name.text_trimmed_range()
-            }
-            Self::CssPseudoClassFunctionValueList(func_value_list) => {
-                let name = func_value_list.name_token().ok()?;
-                name.text_trimmed_range()
-            }
-            Self::CssPseudoClassIdentifier(ident) => {
-                let name = ident.name().ok()?;
-                name.range()
-            }
-            Self::CssPageSelectorPseudo(page_pseudo) => {
-                let name = page_pseudo.selector().ok()?;
-                name.text_trimmed_range()
-            }
-        })
+            Self::CssPseudoClassFunctionCompoundSelector(selector) => selector.name(),
+            Self::CssPseudoClassFunctionCompoundSelectorList(selector_list) => selector_list.name(),
+            Self::CssPseudoClassFunctionIdentifier(ident) => ident.name(),
+            Self::CssPseudoClassFunctionNth(func_nth) => func_nth.name(),
+            Self::CssPseudoClassFunctionRelativeSelectorList(selector_list) => selector_list.name(),
+            Self::CssPseudoClassFunctionSelector(selector) => selector.name(),
+            Self::CssPseudoClassFunctionSelectorList(selector_list) => selector_list.name(),
+            Self::CssPseudoClassFunctionValueList(func_value_list) => func_value_list.name(),
+            Self::CssPseudoClassIdentifier(ident) => ident.name(),
+            Self::CssPageSelectorPseudo(page_pseudo) => page_pseudo.selector(),
+        };
+
+        ident.ok()?.value_token().ok()
     }
 
-    fn name(&self) -> Option<CssSyntaxToken> {
-        Some(match self {
-            Self::CssBogusPseudoClass(_) => return None,
-            Self::CssPseudoClassFunctionCompoundSelector(selector) => selector.name().ok()?,
-            Self::CssPseudoClassFunctionCompoundSelectorList(selector_list) => {
-                selector_list.name().ok()?
-            }
-            Self::CssPseudoClassFunctionIdentifier(ident) => ident.name_token().ok()?,
-            Self::CssPseudoClassFunctionNth(func_nth) => func_nth.name().ok()?,
-            Self::CssPseudoClassFunctionRelativeSelectorList(selector_list) => {
-                selector_list.name_token().ok()?
-            }
-            Self::CssPseudoClassFunctionSelector(selector) => selector.name().ok()?,
-            Self::CssPseudoClassFunctionSelectorList(selector_list) => selector_list.name().ok()?,
-            Self::CssPseudoClassFunctionValueList(func_value_list) => {
-                func_value_list.name_token().ok()?
-            }
-            Self::CssPseudoClassIdentifier(ident) => {
-                let name = ident.name().ok()?;
-                name.value_token().ok()?
-            }
-            Self::CssPageSelectorPseudo(page_pseudo) => page_pseudo.selector().ok()?,
-        })
+    fn name_range(&self) -> Option<TextRange> {
+        self.name().map(|name| name.text_trimmed_range())
     }
 }
 
@@ -187,13 +164,13 @@ impl Rule for NoUnknownPseudoClass {
     type Query = Ast<AnyPseudoLike>;
     type State = NoUnknownPseudoClassSelectorState;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoUnknownPseudoClassOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Option<Self::State> {
         let pseudo_class = ctx.query();
-        let is_css_modules = ctx.is_css_modules();
         let span = pseudo_class.name_range()?;
         let name = pseudo_class.name()?;
+        let file_source = ctx.source_type::<CssFileSource>();
 
         let pseudo_type = match &pseudo_class {
             AnyPseudoLike::CssPageSelectorPseudo(_) => PseudoClassType::PagePseudoClass,
@@ -222,9 +199,10 @@ impl Rule for NoUnknownPseudoClass {
             }
         };
 
-        let is_valid_global = lower_name == "global" && is_css_modules;
-
-        if is_valid_class || is_valid_global {
+        if is_valid_class
+            || should_ignore(lower_name, ctx.options())
+            || file_source.is_css_modules() && is_css_module_pseudo_class(lower_name)
+        {
             None
         } else {
             Some(NoUnknownPseudoClassSelectorState {
@@ -267,4 +245,13 @@ impl Rule for NoUnknownPseudoClass {
         };
         Some(diag)
     }
+}
+
+fn should_ignore(name: &str, options: &NoUnknownPseudoClassOptions) -> bool {
+    for ignore_pattern in &options.ignore {
+        if name.eq_ignore_ascii_case(ignore_pattern) {
+            return true;
+        }
+    }
+    false
 }

@@ -739,6 +739,8 @@ pub const FUNCTION_KEYWORDS: &[&str] = &[
     "selector",
     "sepia",
     "shape",
+    "sibling-count",
+    "sibling-index",
     "sign",
     "sin",
     "skew",
@@ -768,6 +770,7 @@ pub const FUNCTION_KEYWORDS: &[&str] = &[
     "translatez",
     "type",
     "url",
+    "v-bind", // Vue.js specific
     "var",
     "view",
     "xywh",
@@ -927,8 +930,9 @@ pub const RESOURCE_STATE_PSEUDO_CLASSES: [&str; 7] = [
     "volume-locked",
 ];
 
-pub const OTHER_PSEUDO_CLASSES: [&str; 51] = [
+pub const OTHER_PSEUDO_CLASSES: [&str; 52] = [
     "active",
+    "active-view-transition",
     "any-link",
     "autofill",
     "blank",
@@ -980,6 +984,11 @@ pub const OTHER_PSEUDO_CLASSES: [&str; 51] = [
     "visited",
     "window-inactive",
 ];
+
+// CSS Modules pseudo-classes
+// https://github.com/css-modules/css-modules
+pub const CSS_MODULE_PSEUDO_CLASSES: [&str; 2] = ["global", "local"];
+
 // https://github.com/known-css/known-css-properties/blob/master/source/w3c.json
 pub const KNOWN_PROPERTIES: &[&str] = &[
     "-webkit-line-clamp",
@@ -1330,6 +1339,7 @@ pub const KNOWN_PROPERTIES: &[&str] = &[
     "nav-left",
     "nav-right",
     "nav-up",
+    "navigation", // https://www.w3.org/TR/css-view-transitions-2/#view-transition-navigation-descriptor
     "object-fit",
     "object-position",
     "offset",
@@ -5144,7 +5154,7 @@ pub const MEDIA_FEATURE_NAMES: [&str; 60] = [
     "prefers-contrast",
     "prefers-reduced-data",
     "prefers-reduced-motion",
-    "prefers-reduded-transparency",
+    "prefers-reduced-transparency",
     "resolution",
     "scan",
     "screen-spanning",
@@ -5946,42 +5956,42 @@ mod tests {
     }
 
     #[test]
-    fn test_kown_edge_properties_order() {
+    fn test_known_edge_properties_order() {
         for items in KNOWN_EDGE_PROPERTIES.windows(2) {
             assert!(items[0] < items[1], "{} < {}", items[0], items[1]);
         }
     }
 
     #[test]
-    fn test_kown_explorer_properties_order() {
+    fn test_known_explorer_properties_order() {
         for items in KNOWN_EXPLORER_PROPERTIES.windows(2) {
             assert!(items[0] < items[1], "{} < {}", items[0], items[1]);
         }
     }
 
     #[test]
-    fn test_kown_firefox_properties_order() {
+    fn test_known_firefox_properties_order() {
         for items in KNOWN_FIREFOX_PROPERTIES.windows(2) {
             assert!(items[0] < items[1], "{} < {}", items[0], items[1]);
         }
     }
 
     #[test]
-    fn test_kown_safari_properties_order() {
+    fn test_known_safari_properties_order() {
         for items in KNOWN_SAFARI_PROPERTIES.windows(2) {
             assert!(items[0] < items[1], "{} < {}", items[0], items[1]);
         }
     }
 
     #[test]
-    fn test_kown_sumsung_internet_properties_order() {
+    fn test_known_samsung_internet_properties_order() {
         for items in KNOWN_SAMSUNG_INTERNET_PROPERTIES.windows(2) {
             assert!(items[0] < items[1], "{} < {}", items[0], items[1]);
         }
     }
 
     #[test]
-    fn test_kown_us_browser_properties_order() {
+    fn test_known_us_browser_properties_order() {
         for items in KNOWN_US_BROWSER_PROPERTIES.windows(2) {
             assert!(items[0] < items[1], "{} < {}", items[0], items[1]);
         }

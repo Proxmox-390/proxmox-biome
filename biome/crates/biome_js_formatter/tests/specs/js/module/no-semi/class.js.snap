@@ -2,6 +2,7 @@
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: js/module/no-semi/class.js
 ---
+
 # Input
 
 ```js
@@ -148,6 +149,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -267,6 +270,7 @@ class G3 {
 class G4 {
 	[x] = 1;
 }
+
 ```
 
 ## Output 1
@@ -286,6 +290,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -405,4 +411,5 @@ class G3 {
 class G4 {
 	[x] = 1
 }
+
 ```

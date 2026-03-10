@@ -1,8 +1,9 @@
 use biome_diagnostics::Severity;
-use biome_module_graph::ResolvedPath;
+use biome_module_graph::JsImportPath;
 use camino::{Utf8Component, Utf8Path};
 use serde::{Deserialize, Serialize};
 
+use crate::{JsRuleAction, services::module_graph::ResolvedImports};
 use biome_analyze::{
     FixKind, Rule, RuleDiagnostic, RuleDomain, context::RuleContext, declare_lint_rule,
 };
@@ -11,11 +12,7 @@ use biome_deserialize_macros::Deserializable;
 use biome_js_factory::make;
 use biome_js_syntax::{AnyJsImportLike, JsSyntaxToken, inner_string_text};
 use biome_rowan::BatchMutationExt;
-
-use crate::{JsRuleAction, services::module_graph::ResolvedImports};
-
-#[cfg(feature = "schemars")]
-use schemars::JsonSchema;
+use biome_rule_options::use_import_extensions::UseImportExtensionsOptions;
 
 declare_lint_rule! {
     /// Enforce file extensions for relative imports.
@@ -80,6 +77,32 @@ declare_lint_rule! {
     ///
     /// The rule provides the options described below.
     ///
+    /// ### extensionMappings
+    ///
+    /// A map of file extensions to their suggested replacements. This allows you
+    /// to specify custom mappings for import extensions. For example, you can
+    /// map TypeScript imports to JavaScript extensions.
+    ///
+    /// This is useful if you are bundling your code to JavaScript into a package
+    /// and want to make sure all imports of TypeScript files use the `.js` extension
+    /// instead.
+    ///
+    /// If no mapping is found for a given extension, and the import is missing an extension,
+    /// the rule will suggest using the actual extension of the resolved file.
+    ///
+    /// Default: `{}` (empty object)
+    ///
+    /// ```json,options
+    /// {
+    ///     "options": {
+    ///         "extensionMappings": {
+    ///             "ts": "js",
+    ///             "tsx": "js"
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    ///
     /// ### forceJsExtensions
     ///
     /// Normally, this rule suggests to use the extension of the module that is
@@ -125,15 +148,6 @@ declare_lint_rule! {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserializable, Deserialize, Serialize, Eq, PartialEq)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
-pub struct UseImportExtensionsOptions {
-    /// If `true`, the suggested extension is always `.js` regardless of what
-    /// extension the source file has in your project.
-    pub force_js_extensions: bool,
-}
-
 #[derive(Debug, Clone, Default, Deserializable, Deserialize, Serialize, Eq, PartialEq)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields, default)]
@@ -148,18 +162,18 @@ impl Rule for UseImportExtensions {
     type Query = ResolvedImports<AnyJsImportLike>;
     type State = UseImportExtensionsState;
     type Signals = Option<Self::State>;
-    type Options = Box<UseImportExtensionsOptions>;
+    type Options = UseImportExtensionsOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let module_info = ctx.module_info_for_path(ctx.file_path())?;
-        let force_js_extensions = ctx.options().force_js_extensions;
+        let force_js_extensions = ctx.options().force_js_extensions();
 
         let node = ctx.query();
         let resolved_path = module_info
             .get_import_path_by_js_node(node)
-            .and_then(ResolvedPath::as_path)?;
+            .and_then(JsImportPath::as_path)?;
 
-        get_extensionless_import(node, resolved_path, force_js_extensions)
+        get_extensionless_import(node, resolved_path, ctx, force_js_extensions)
     }
 
     fn diagnostic(_: &RuleContext<Self>, state: &Self::State) -> Option<RuleDiagnostic> {
@@ -181,7 +195,7 @@ impl Rule for UseImportExtensions {
         let mut mutation = ctx.root().begin();
 
         let (suggested_path, extension) = state.suggestion.clone()?;
-        let new_module_name = if ctx.as_preferred_quote().is_double() {
+        let new_module_name = if ctx.preferred_quote().is_double() {
             make::js_string_literal(&suggested_path)
         } else {
             make::js_string_literal_single_quotes(&suggested_path)
@@ -212,6 +226,7 @@ pub struct UseImportExtensionsState {
 fn get_extensionless_import(
     node: &AnyJsImportLike,
     resolved_path: &Utf8Path,
+    ctx: &RuleContext<UseImportExtensions>,
     force_js_extensions: bool,
 ) -> Option<UseImportExtensionsState> {
     let module_name_token = node.module_name_token()?;
@@ -224,46 +239,74 @@ fn get_extensionless_import(
         first_component,
         Utf8Component::CurDir | Utf8Component::ParentDir
     ) {
-        return None;
+        // TypeScript path aliases should still be considered.
+        // The same does *not* apply for `package.json` aliases, because
+        // extensions are not automatically applied to those.
+        let matches_path_alias = ctx
+            .project_layout()
+            .query_tsconfig_for_path(ctx.file_path(), |tsconfig| {
+                tsconfig.matches_path_alias(path.as_str())
+            })?;
+        if !matches_path_alias {
+            return None;
+        }
     }
 
-    // In cases like `./foo.css` -> `./foo.css.ts`
-    let resolved_path_has_sub_extension = resolved_path
-        .file_stem()
-        .is_some_and(|stem| stem.contains('.'));
-    let existing_extension = path.extension();
+    let resolved_stem = resolved_path.file_stem();
+    let resolved_extension = resolved_path.extension();
+    let resolved_path_sub_extension =
+        resolved_stem.and_then(|stem| stem.rfind('.').map(|pos| &stem[pos + 1..]));
 
-    if resolved_path_has_sub_extension && path.file_name()?.starts_with(resolved_path.file_name()?)
-    {
-        return None;
-    }
+    let mut existing_extension = path.extension();
 
-    if !resolved_path_has_sub_extension && existing_extension.is_some() {
-        return None;
+    match (resolved_path_sub_extension, existing_extension) {
+        (Some("d"), Some("js")) if resolved_extension.is_some_and(|ext| ext == "ts") => {
+            return None; // We resolved a `.d.ts` file, but imported the `.js` file: OK.
+        }
+        (Some(_), _) if path.file_name()?.starts_with(resolved_path.file_name()?) => {
+            return None; // For cases like `./foo.css` -> `./foo.css.ts`
+        }
+        _ => {}
     }
 
     let last_component = path_components.next_back().unwrap_or(first_component);
+    let query_or_hash = last_component
+        .as_str()
+        .find(['?', '#'])
+        .map(|index| &last_component.as_str()[index..]);
 
-    let has_query_or_hash =
-        last_component.as_str().contains('?') || last_component.as_str().contains('#');
-    if has_query_or_hash {
-        return Some(UseImportExtensionsState {
-            module_name_token,
-            suggestion: None,
-        });
+    if let Some(query_or_hash) = query_or_hash
+        && let Some(existing_extension) = existing_extension.as_mut()
+    {
+        *existing_extension = existing_extension
+            .strip_suffix(query_or_hash)
+            .unwrap_or(existing_extension);
     }
 
     let extension = if force_js_extensions {
         "js"
+    } else if let Some(extension_mappings) = ctx.options().extension_mappings.as_ref()
+        && let Some(mapped_extension) =
+            resolved_extension.and_then(|ext| extension_mappings.get(ext))
+    {
+        mapped_extension.as_ref()
     } else {
-        resolved_path.extension()?
+        resolved_extension?
     };
 
-    let is_index_file = resolved_path
-        .file_stem()
-        .is_some_and(|stem| stem == "index");
+    // Check if the existing extension matches the desired one.
+    if existing_extension.is_some_and(|ext| ext == extension) {
+        return None;
+    }
 
-    let new_path = if is_index_file {
+    let is_index_file = resolved_stem.is_some_and(|stem| stem == "index");
+    let import_path_ends_with_index = path.file_name().is_some_and(|name| name == "index")
+        || path
+            .with_extension("")
+            .file_name()
+            .is_some_and(|name| name == "index");
+
+    let new_path = if is_index_file && !import_path_ends_with_index {
         let mut path_parts = path.as_str().split('/');
 
         // Remove trailing slash and useless path segment.
@@ -286,14 +329,14 @@ fn get_extensionless_import(
         new_path
     } else {
         let mut new_path = path.to_path_buf();
-        let sub_extension = if resolved_path_has_sub_extension {
+        let sub_extension = if resolved_path_sub_extension.is_some() {
             existing_extension
         } else {
             None
         };
 
         if let Some(sub_ext) = sub_extension {
-            new_path.set_extension(format!("{}.{}", sub_ext, extension));
+            new_path.set_extension(format!("{sub_ext}.{extension}"));
         } else {
             new_path.set_extension(extension);
         }
@@ -302,7 +345,9 @@ fn get_extensionless_import(
     };
 
     Some(UseImportExtensionsState {
-        module_name_token: module_name_token.clone(),
-        suggestion: Some((new_path, extension.to_string())),
+        module_name_token,
+        suggestion: query_or_hash
+            .is_none()
+            .then(|| (new_path, extension.to_string())),
     })
 }

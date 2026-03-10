@@ -1,8 +1,8 @@
 ---
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: css/comments/custom-properties.css
-snapshot_kind: text
 ---
+
 # Input
 
 ```css
@@ -122,6 +122,7 @@ custom-properties.css:4:12 parse ━━━━━━━━━━━━━━━�
   - any-link
   - local-link
   - scope
+  - state
   - current
   - past
   - future

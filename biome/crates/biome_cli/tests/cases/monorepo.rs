@@ -385,3 +385,433 @@ fn should_not_lint_when_root_is_disabled_but_nested_is_enabled() {
         result,
     ));
 }
+
+#[test]
+fn should_find_settings_when_run_from_nested_dir() {
+    let mut console = BufferConsole::default();
+    let mut fs = TemporaryFs::new("should_find_settings_when_run_from_nested_dir");
+
+    fs.create_file(
+        "biome.jsonc",
+        r#"{
+    "linter": {
+        "rules": {
+            "correctness": { "noUnusedVariables": "off" },
+            "suspicious": { "noDebugger": "off" }
+        }
+    }
+}"#,
+    );
+
+    fs.create_file(
+        "packages/lib/biome.jsonc",
+        r#"{
+    "extends": "//",
+    "linter": {
+        "rules": {
+            "correctness": { "noUnusedVariables": "error" }
+        }
+    }
+}"#,
+    );
+
+    fs.create_file("file.js", "let a; debugger");
+
+    fs.create_file("packages/lib/file.js", "let a; debugger");
+
+    fs.append_to_working_directory("packages/lib");
+
+    let result = run_cli_with_dyn_fs(
+        Box::new(fs.create_os()),
+        &mut console,
+        Args::from(["lint", fs.cli_path()].as_slice()),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "should_find_settings_when_run_from_nested_dir",
+        fs.create_mem(),
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn should_find_settings_when_targeting_file_in_nested_dir() {
+    let mut fs = TemporaryFs::new("should_find_settings_when_targeting_file_in_nested_dir");
+
+    fs.create_file(
+        "biome.jsonc",
+        r#"{
+    "linter": {
+        "includes": ["**/*.js"],
+        "rules": {
+            "correctness": { "noUnusedVariables": "off" },
+            "suspicious": { "noDebugger": "off" }
+        }
+    }
+}"#,
+    );
+
+    fs.create_file(
+        "packages/lib/biome.jsonc",
+        r#"{
+    "extends": "//",
+    "linter": {
+        "rules": {
+            "correctness": { "noUnusedVariables": "error" }
+        }
+    }
+}"#,
+    );
+
+    fs.create_file("file.js", "let a; debugger");
+
+    fs.create_file("packages/lib/file.js", "let a; debugger");
+
+    let mut console = BufferConsole::default();
+    let result = run_cli_with_dyn_fs(
+        Box::new(fs.create_os()),
+        &mut console,
+        Args::from(["lint", &format!("{}/packages/lib/file.js", fs.cli_path())].as_slice()),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "should_find_settings_when_targeting_file_in_nested_dir",
+        fs.create_mem(),
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn should_find_settings_when_targeting_nested_dir() {
+    let mut fs = TemporaryFs::new("should_find_settings_when_targeting_nested_dir");
+
+    fs.create_file(
+        "biome.jsonc",
+        r#"{
+    "linter": {
+        "includes": ["**/*.js"],
+        "rules": {
+            "correctness": { "noUnusedVariables": "off" },
+            "suspicious": { "noDebugger": "off" }
+        }
+    }
+}"#,
+    );
+
+    fs.create_file(
+        "packages/lib/biome.jsonc",
+        r#"{
+    "extends": "//",
+    "linter": {
+        "rules": {
+            "correctness": { "noUnusedVariables": "error" }
+        }
+    }
+}"#,
+    );
+
+    fs.create_file("file.js", "let a; debugger");
+
+    fs.create_file("packages/lib/file.js", "let a; debugger");
+
+    let mut console = BufferConsole::default();
+    let result = run_cli_with_dyn_fs(
+        Box::new(fs.create_os()),
+        &mut console,
+        Args::from(["lint", &format!("{}/packages/lib", fs.cli_path())].as_slice()),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "should_find_settings_when_targeting_nested_dir",
+        fs.create_mem(),
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn should_find_settings_when_targeting_parent_of_nested_dir() {
+    let mut fs = TemporaryFs::new("should_find_settings_when_targeting_parent_of_nested_dir");
+
+    fs.create_file(
+        "biome.jsonc",
+        r#"{
+    "linter": {
+        "includes": ["**/*.js"],
+        "rules": {
+            "correctness": { "noUnusedVariables": "off" },
+            "suspicious": { "noDebugger": "off" }
+        }
+    }
+}"#,
+    );
+
+    fs.create_file(
+        "packages/lib/biome.jsonc",
+        r#"{
+    "extends": "//",
+    "linter": {
+        "rules": {
+            "correctness": { "noUnusedVariables": "error" }
+        }
+    }
+}"#,
+    );
+
+    fs.create_file("file.js", "let a; debugger");
+
+    fs.create_file("packages/lib/file.js", "let a; debugger");
+
+    let mut console = BufferConsole::default();
+    let result = run_cli_with_dyn_fs(
+        Box::new(fs.create_os()),
+        &mut console,
+        Args::from(["lint", &format!("{}/packages", fs.cli_path())].as_slice()),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "should_find_settings_when_targeting_parent_of_nested_dir",
+        fs.create_mem(),
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn should_ignore_nested_configuration_in_ignored_directory() {
+    let mut fs = TemporaryFs::new("should_ignore_nested_configuration_in_ignored_directory");
+
+    fs.create_file(
+        "biome.jsonc",
+        r#"{
+    "files": {
+        "includes": ["**/*.js", "!vendor"],
+    },
+    "linter": {
+        "rules": {
+            "correctness": { "noUnusedVariables": "off" },
+            "suspicious": { "noDebugger": "off" }
+        }
+    }
+}"#,
+    );
+
+    fs.create_file(
+        "vendor/biome.jsonc",
+        r#"{
+    "root": true,
+    "linter": {
+        "rules": {
+            "correctness": { "noUnusedVariables": "error" }
+        }
+    }
+}"#,
+    );
+
+    fs.create_file("file.js", "let a; debugger");
+
+    fs.create_file("vendor/foo/file.js", "let a; debugger");
+
+    let mut console = BufferConsole::default();
+    let result = run_cli_with_dyn_fs(
+        Box::new(fs.create_os()),
+        &mut console,
+        Args::from(["lint"].as_slice()),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "should_ignore_nested_configuration_in_ignored_directory",
+        fs.create_mem(),
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn should_ignore_linter_nested_file() {
+    let mut fs = TemporaryFs::new("should_ignore_linter_nested_file");
+
+    fs.create_file(
+        "biome.jsonc",
+        r#"{
+    "files": {
+        "includes": ["**"],
+    }
+}"#,
+    );
+
+    fs.create_file(
+        "package/biome.jsonc",
+        r#"{
+    "extends": "//",
+    "linter": {
+        "includes": ["**", "!**/*.test.js"]
+    }
+}"#,
+    );
+
+    fs.create_file("file.js", "let a; debugger");
+
+    fs.create_file("package/file.test.js", "let a; debugger");
+
+    let mut console = BufferConsole::default();
+    let result = run_cli_with_dyn_fs(
+        Box::new(fs.create_os()),
+        &mut console,
+        Args::from(["lint"].as_slice()),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "should_ignore_linter_nested_file",
+        fs.create_mem(),
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn plugins_in_child_config_with_extends_root() {
+    let mut fs = TemporaryFs::new("plugins_in_child_config_with_extends_root");
+
+    fs.create_file(
+        "biome.json",
+        r#"{
+    "linter": {
+        "enabled": true
+    }
+}"#,
+    );
+
+    fs.create_file(
+        "packages/mobile/biome.json",
+        r#"{
+    "extends": "//",
+    "plugins": ["./biome-plugins/no-object-assign.grit"],
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true
+        }
+    }
+}"#,
+    );
+
+    fs.create_file(
+        "packages/mobile/biome-plugins/no-object-assign.grit",
+        r#"`$fn($args)` where {
+    $fn <: `Object.assign`,
+    register_diagnostic(
+        span = $fn,
+        message = "Prefer object spread instead of Object.assign()",
+        severity = "warn"
+    )
+}"#,
+    );
+
+    fs.create_file(
+        "packages/mobile/src/file.js",
+        r#"const merged = Object.assign({}, a, b);
+"#,
+    );
+
+    let mut console = BufferConsole::default();
+    let result = run_cli_with_dyn_fs(
+        Box::new(fs.create_os()),
+        &mut console,
+        Args::from(
+            [
+                "lint",
+                &format!("{}/packages/mobile/src/file.js", fs.cli_path()),
+            ]
+            .as_slice(),
+        ),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "plugins_in_child_config_with_extends_root",
+        fs.create_mem(),
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn plugins_from_root_config_work_in_child_config_extends_root() {
+    let mut fs = TemporaryFs::new("plugins_from_root_config_work_in_child_config_extends_root");
+
+    fs.create_file(
+        "biome.json",
+        r#"{
+    "root": true,
+    "plugins": ["./biome/no-object-assign.grit"],
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true
+        }
+    }
+}"#,
+    );
+
+    fs.create_file(
+        "biome/no-object-assign.grit",
+        r#"`$fn($args)` where {
+    $fn <: `Object.assign`,
+    register_diagnostic(
+        span = $fn,
+        message = "Prefer object spread instead of Object.assign()",
+        severity = "warn"
+    )
+}"#,
+    );
+
+    // Child config extends root but doesn't define plugins.
+    fs.create_file(
+        "packages/mobile/biome.json",
+        r#"{
+    "extends": "//",
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true
+        }
+    }
+}"#,
+    );
+
+    fs.create_file(
+        "packages/mobile/src/file.js",
+        r#"const merged = Object.assign({}, a, b);
+"#,
+    );
+
+    let mut console = BufferConsole::default();
+    let result = run_cli_with_dyn_fs(
+        Box::new(fs.create_os()),
+        &mut console,
+        Args::from(
+            [
+                "lint",
+                &format!("{}/packages/mobile/src/file.js", fs.cli_path()),
+            ]
+            .as_slice(),
+        ),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "plugins_from_root_config_work_in_child_config_extends_root",
+        fs.create_mem(),
+        console,
+        result,
+    ));
+}

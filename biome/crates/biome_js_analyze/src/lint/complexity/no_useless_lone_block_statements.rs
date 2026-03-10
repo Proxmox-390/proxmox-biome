@@ -10,6 +10,7 @@ use biome_js_syntax::{
     JsStatementList, JsSyntaxKind, JsVariableStatement,
 };
 use biome_rowan::{AstNode, AstNodeList, BatchMutationExt};
+use biome_rule_options::no_useless_lone_block_statements::NoUselessLoneBlockStatementsOptions;
 
 declare_lint_rule! {
     /// Disallow unnecessary nested block statements.
@@ -57,11 +58,11 @@ impl Rule for NoUselessLoneBlockStatements {
     type Query = Ast<JsBlockStatement>;
     type State = ();
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoUselessLoneBlockStatementsOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let block = ctx.query();
-        let is_module = ctx.source_type::<JsFileSource>().is_module();
+        let file_source = ctx.source_type::<JsFileSource>();
 
         if JsLabeledStatement::can_cast(block.syntax().parent()?.kind()) {
             return None;
@@ -82,7 +83,7 @@ impl Rule for NoUselessLoneBlockStatements {
         if block
             .statements()
             .iter()
-            .any(|statement| statement_has_block_level_declaration(&statement, is_module))
+            .any(|statement| statement_has_block_level_declaration(&statement, file_source))
         {
             return None;
         }
@@ -139,10 +140,13 @@ impl Rule for NoUselessLoneBlockStatements {
     }
 }
 
-fn statement_has_block_level_declaration(statement: &AnyJsStatement, is_module: bool) -> bool {
+fn statement_has_block_level_declaration(
+    statement: &AnyJsStatement,
+    file_source: &JsFileSource,
+) -> bool {
     match statement {
         AnyJsStatement::JsVariableStatement(variable) => is_not_var_declaration(variable),
-        AnyJsStatement::JsFunctionDeclaration(_) => is_module,
+        AnyJsStatement::JsFunctionDeclaration(_) => file_source.is_module(),
         AnyJsStatement::JsClassDeclaration(_) => true,
         _ => false,
     }

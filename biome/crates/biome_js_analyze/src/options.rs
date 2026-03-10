@@ -1,7 +1,5 @@
 //! Generated file, do not edit by hand, see `xtask/codegen`
 
-//! Generated file, do not edit by hand, see `xtask/codegen`
-
 use crate::assist;
 use crate::lint;
 pub type NoAccessKey = <lint::a11y::no_access_key::NoAccessKey as biome_analyze::Rule>::Options;
@@ -156,10 +154,14 @@ pub type NoIrregularWhitespace = < lint :: suspicious :: no_irregular_whitespace
 pub type NoLabelVar = <lint::suspicious::no_label_var::NoLabelVar as biome_analyze::Rule>::Options;
 pub type NoLabelWithoutControl =
     <lint::a11y::no_label_without_control::NoLabelWithoutControl as biome_analyze::Rule>::Options;
+pub type NoMagicNumbers =
+    <lint::nursery::no_magic_numbers::NoMagicNumbers as biome_analyze::Rule>::Options;
 pub type NoMisleadingCharacterClass = < lint :: suspicious :: no_misleading_character_class :: NoMisleadingCharacterClass as biome_analyze :: Rule > :: Options ;
 pub type NoMisleadingInstantiator = < lint :: suspicious :: no_misleading_instantiator :: NoMisleadingInstantiator as biome_analyze :: Rule > :: Options ;
 pub type NoMisplacedAssertion = < lint :: suspicious :: no_misplaced_assertion :: NoMisplacedAssertion as biome_analyze :: Rule > :: Options ;
 pub type NoMisrefactoredShorthandAssign = < lint :: suspicious :: no_misrefactored_shorthand_assign :: NoMisrefactoredShorthandAssign as biome_analyze :: Rule > :: Options ;
+pub type NoMisusedPromises =
+    <lint::nursery::no_misused_promises::NoMisusedPromises as biome_analyze::Rule>::Options;
 pub type NoNamespace = <lint::style::no_namespace::NoNamespace as biome_analyze::Rule>::Options;
 pub type NoNamespaceImport =
     <lint::performance::no_namespace_import::NoNamespaceImport as biome_analyze::Rule>::Options;
@@ -307,6 +309,7 @@ pub type NoVoid = <lint::complexity::no_void::NoVoid as biome_analyze::Rule>::Op
 pub type NoVoidElementsWithChildren = < lint :: correctness :: no_void_elements_with_children :: NoVoidElementsWithChildren as biome_analyze :: Rule > :: Options ;
 pub type NoVoidTypeReturn =
     <lint::correctness::no_void_type_return::NoVoidTypeReturn as biome_analyze::Rule>::Options;
+pub type NoVueDataObjectDeclaration = < lint :: nursery :: no_vue_data_object_declaration :: NoVueDataObjectDeclaration as biome_analyze :: Rule > :: Options ;
 pub type NoWith = <lint::suspicious::no_with::NoWith as biome_analyze::Rule>::Options;
 pub type NoYodaExpression =
     <lint::style::no_yoda_expression::NoYodaExpression as biome_analyze::Rule>::Options;
@@ -445,6 +448,8 @@ pub type UseSortedClasses =
     <lint::nursery::use_sorted_classes::UseSortedClasses as biome_analyze::Rule>::Options;
 pub type UseSortedKeys =
     <assist::source::use_sorted_keys::UseSortedKeys as biome_analyze::Rule>::Options;
+pub type UseSortedInterfaceMembers =
+    <assist::source::use_sorted_interface_members::UseSortedInterfaceMembers as biome_analyze::Rule>::Options;
 pub type UseStrictMode =
     <lint::suspicious::use_strict_mode::UseStrictMode as biome_analyze::Rule>::Options;
 pub type UseSymbolDescription =

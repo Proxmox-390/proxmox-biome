@@ -3,11 +3,13 @@ use super::{
     ExtensionHandler, FixAllParams, FormatterCapabilities, LintParams, LintResults, ParseResult,
     ParserCapabilities, SearchCapabilities,
 };
-use crate::settings::{check_feature_activity, check_override_feature_activity};
+use crate::settings::{
+    OverrideSettings, SettingsWithEditor, check_feature_activity, check_override_feature_activity,
+};
 use crate::workspace::{FixFileResult, GetSyntaxTreeResult};
 use crate::{
     WorkspaceError,
-    settings::{ServiceLanguage, Settings, WorkspaceSettingsHandle},
+    settings::{ServiceLanguage, Settings},
 };
 use biome_analyze::{AnalyzerOptions, QueryMatch};
 use biome_configuration::grit::{
@@ -15,7 +17,9 @@ use biome_configuration::grit::{
     GritLinterConfiguration, GritLinterEnabled,
 };
 use biome_diagnostics::{Diagnostic, Severity};
-use biome_formatter::{FormatError, IndentStyle, IndentWidth, LineEnding, LineWidth, Printed};
+use biome_formatter::{
+    FormatError, IndentStyle, IndentWidth, LineEnding, LineWidth, Printed, TrailingNewline,
+};
 use biome_fs::BiomePath;
 use biome_grit_formatter::{context::GritFormatOptions, format_node, format_sub_tree};
 use biome_grit_parser::parse_grit_with_cache;
@@ -33,6 +37,7 @@ pub struct GritFormatterSettings {
     pub indent_width: Option<IndentWidth>,
     pub indent_style: Option<IndentStyle>,
     pub enabled: Option<GritFormatterEnabled>,
+    pub trailing_newline: Option<TrailingNewline>,
 }
 
 impl From<GritFormatterConfiguration> for GritFormatterSettings {
@@ -43,6 +48,7 @@ impl From<GritFormatterConfiguration> for GritFormatterSettings {
             indent_width: config.indent_width,
             indent_style: config.indent_style,
             enabled: config.enabled,
+            trailing_newline: config.trailing_newline,
         }
     }
 }
@@ -78,56 +84,76 @@ impl From<GritAssistConfiguration> for GritAssistSettings {
 impl ServiceLanguage for GritLanguage {
     type FormatterSettings = GritFormatterSettings;
     type LinterSettings = GritLinterSettings;
+    type AssistSettings = GritAssistSettings;
     type FormatOptions = GritFormatOptions;
     type ParserSettings = ();
+    type ParserOptions = ();
     type EnvironmentSettings = ();
-    type AssistSettings = GritAssistSettings;
+
     fn lookup_settings(
         languages: &crate::settings::LanguageListSettings,
     ) -> &crate::settings::LanguageSettings<Self> {
         &languages.grit
     }
 
+    fn resolve_environment(_settings: &Settings) -> Option<&Self::EnvironmentSettings> {
+        None
+    }
+
+    fn resolve_parse_options(
+        _overrides: &OverrideSettings,
+        _language: &Self::ParserSettings,
+        _path: &BiomePath,
+        _file_source: &DocumentFileSource,
+    ) -> Self::ParserOptions {
+    }
+
     fn resolve_format_options(
-        global: Option<&crate::settings::FormatSettings>,
-        overrides: Option<&crate::settings::OverrideSettings>,
-        language: Option<&Self::FormatterSettings>,
+        global: &crate::settings::FormatSettings,
+        overrides: &crate::settings::OverrideSettings,
+        language: &Self::FormatterSettings,
         path: &biome_fs::BiomePath,
         file_source: &super::DocumentFileSource,
     ) -> Self::FormatOptions {
         let indent_style = language
-            .and_then(|l| l.indent_style)
-            .or(global.and_then(|g| g.indent_style))
+            .indent_style
+            .or(global.indent_style)
             .unwrap_or_default();
         let line_width = language
-            .and_then(|l| l.line_width)
-            .or(global.and_then(|g| g.line_width))
+            .line_width
+            .or(global.line_width)
             .unwrap_or_default();
         let indent_width = language
-            .and_then(|l| l.indent_width)
-            .or(global.and_then(|g| g.indent_width))
+            .indent_width
+            .or(global.indent_width)
             .unwrap_or_default();
 
         let line_ending = language
-            .and_then(|l| l.line_ending)
-            .or(global.and_then(|g| g.line_ending))
+            .line_ending
+            .or(global.line_ending)
             .unwrap_or_default();
 
-        let options = GritFormatOptions::new(file_source.to_grit_file_source().unwrap_or_default())
-            .with_indent_style(indent_style)
-            .with_indent_width(indent_width)
-            .with_line_width(line_width)
-            .with_line_ending(line_ending);
-        if let Some(overrides) = overrides {
-            overrides.to_override_grit_format_options(path, options)
-        } else {
-            options
-        }
+        let trailing_newline = language
+            .trailing_newline
+            .or(global.trailing_newline)
+            .unwrap_or_default();
+
+        let mut options =
+            GritFormatOptions::new(file_source.to_grit_file_source().unwrap_or_default())
+                .with_indent_style(indent_style)
+                .with_indent_width(indent_width)
+                .with_line_width(line_width)
+                .with_line_ending(line_ending)
+                .with_trailing_newline(trailing_newline);
+
+        overrides.apply_override_grit_format_options(path, &mut options);
+
+        options
     }
 
     fn resolve_analyzer_options(
-        _global: Option<&crate::settings::Settings>,
-        _language: Option<&Self::LinterSettings>,
+        _global: &Settings,
+        _language: &Self::LinterSettings,
         _environment: Option<&Self::EnvironmentSettings>,
         path: &BiomePath,
         _file_source: &DocumentFileSource,
@@ -138,95 +164,85 @@ impl ServiceLanguage for GritLanguage {
             .with_suppression_reason(suppression_reason)
     }
 
-    fn formatter_enabled_for_file_path(settings: Option<&Settings>, path: &Utf8Path) -> bool {
-        settings
-            .and_then(|settings| {
-                let overrides_activity =
-                    settings
-                        .override_settings
-                        .patterns
-                        .iter()
-                        .rev()
-                        .find_map(|pattern| {
-                            check_override_feature_activity(
-                                pattern.languages.grit.formatter.enabled,
-                                pattern.formatter.enabled,
-                            )
-                            .filter(|_| {
-                                // Then check whether the path satisfies
-                                pattern.is_file_included(path)
-                            })
-                        });
+    fn linter_enabled_for_file_path(settings: &Settings, path: &Utf8Path) -> bool {
+        let overrides_activity =
+            settings
+                .override_settings
+                .patterns
+                .iter()
+                .rev()
+                .find_map(|pattern| {
+                    check_override_feature_activity(
+                        pattern.languages.grit.linter.enabled,
+                        pattern.linter.enabled,
+                    )
+                    .filter(|_| {
+                        // Then check whether the path satisfies
+                        pattern.is_file_included(path)
+                    })
+                });
 
-                overrides_activity.or(check_feature_activity(
-                    settings.languages.grit.formatter.enabled,
-                    settings.formatter.enabled,
-                ))
-            })
+        overrides_activity
+            .or(check_feature_activity(
+                settings.languages.grit.linter.enabled,
+                settings.linter.enabled,
+            ))
             .unwrap_or_default()
             .into()
     }
 
-    fn assist_enabled_for_file_path(settings: Option<&Settings>, path: &Utf8Path) -> bool {
-        settings
-            .and_then(|settings| {
-                let overrides_activity =
-                    settings
-                        .override_settings
-                        .patterns
-                        .iter()
-                        .rev()
-                        .find_map(|pattern| {
-                            check_override_feature_activity(
-                                pattern.languages.grit.assist.enabled,
-                                pattern.assist.enabled,
-                            )
-                            .filter(|_| {
-                                // Then check whether the path satisfies
-                                pattern.is_file_included(path)
-                            })
-                        });
+    fn formatter_enabled_for_file_path(settings: &Settings, path: &Utf8Path) -> bool {
+        let overrides_activity =
+            settings
+                .override_settings
+                .patterns
+                .iter()
+                .rev()
+                .find_map(|pattern| {
+                    check_override_feature_activity(
+                        pattern.languages.grit.formatter.enabled,
+                        pattern.formatter.enabled,
+                    )
+                    .filter(|_| {
+                        // Then check whether the path satisfies
+                        pattern.is_file_included(path)
+                    })
+                });
 
-                overrides_activity.or(check_feature_activity(
-                    settings.languages.grit.assist.enabled,
-                    settings.assist.enabled,
-                ))
-            })
+        overrides_activity
+            .or(check_feature_activity(
+                settings.languages.grit.formatter.enabled,
+                settings.formatter.enabled,
+            ))
             .unwrap_or_default()
             .into()
     }
 
-    fn linter_enabled_for_file_path(settings: Option<&Settings>, path: &Utf8Path) -> bool {
-        settings
-            .and_then(|settings| {
-                let overrides_activity =
-                    settings
-                        .override_settings
-                        .patterns
-                        .iter()
-                        .rev()
-                        .find_map(|pattern| {
-                            check_override_feature_activity(
-                                pattern.languages.grit.linter.enabled,
-                                pattern.linter.enabled,
-                            )
-                            .filter(|_| {
-                                // Then check whether the path satisfies
-                                pattern.is_file_included(path)
-                            })
-                        });
+    fn assist_enabled_for_file_path(settings: &Settings, path: &Utf8Path) -> bool {
+        let overrides_activity =
+            settings
+                .override_settings
+                .patterns
+                .iter()
+                .rev()
+                .find_map(|pattern| {
+                    check_override_feature_activity(
+                        pattern.languages.grit.assist.enabled,
+                        pattern.assist.enabled,
+                    )
+                    .filter(|_| {
+                        // Then check whether the path satisfies
+                        pattern.is_file_included(path)
+                    })
+                });
 
-                overrides_activity.or(check_feature_activity(
-                    settings.languages.grit.linter.enabled,
-                    settings.linter.enabled,
-                ))
-            })
+        overrides_activity
+            .or(check_feature_activity(
+                settings.languages.grit.assist.enabled,
+                settings.assist.enabled,
+            ))
             .unwrap_or_default()
             .into()
-    }
-
-    fn resolve_environment(_settings: Option<&Settings>) -> Option<&Self::EnvironmentSettings> {
-        None
     }
 }
 
@@ -242,7 +258,10 @@ impl ExtensionHandler for GritFileHandler {
                 assist: Some(assist_enabled),
                 search: Some(search_enabled),
             },
-            parser: ParserCapabilities { parse: Some(parse) },
+            parser: ParserCapabilities {
+                parse: Some(parse),
+                parse_embedded_nodes: None,
+            },
             debug: DebugCapabilities {
                 debug_syntax_tree: Some(debug_syntax_tree),
                 debug_control_flow: None,
@@ -256,30 +275,33 @@ impl ExtensionHandler for GritFileHandler {
                 code_actions: None,
                 rename: None,
                 fix_all: Some(fix_all),
+                update_snippets: None,
+                pull_diagnostics_and_actions: None,
             },
             formatter: FormatterCapabilities {
                 format: Some(format),
                 format_range: Some(format_range),
                 format_on_type: Some(format_on_type),
+                format_embedded: None,
             },
             search: SearchCapabilities { search: None },
         }
     }
 }
 
-fn formatter_enabled(path: &Utf8Path, handle: &WorkspaceSettingsHandle) -> bool {
-    handle.formatter_enabled_for_file_path::<GritLanguage>(path)
+fn formatter_enabled(path: &Utf8Path, settings: &SettingsWithEditor) -> bool {
+    settings.formatter_enabled_for_file_path::<GritLanguage>(path)
 }
 
-fn linter_enabled(path: &Utf8Path, handle: &WorkspaceSettingsHandle) -> bool {
-    handle.linter_enabled_for_file_path::<GritLanguage>(path)
+fn linter_enabled(path: &Utf8Path, settings: &SettingsWithEditor) -> bool {
+    settings.linter_enabled_for_file_path::<GritLanguage>(path)
 }
 
-fn assist_enabled(path: &Utf8Path, handle: &WorkspaceSettingsHandle) -> bool {
-    handle.assist_enabled_for_file_path::<GritLanguage>(path)
+fn assist_enabled(path: &Utf8Path, settings: &SettingsWithEditor) -> bool {
+    settings.assist_enabled_for_file_path::<GritLanguage>(path)
 }
 
-fn search_enabled(_path: &Utf8Path, _handle: &WorkspaceSettingsHandle) -> bool {
+fn search_enabled(_path: &Utf8Path, _settings: &SettingsWithEditor) -> bool {
     true
 }
 
@@ -287,7 +309,7 @@ fn parse(
     _biome_path: &BiomePath,
     file_source: DocumentFileSource,
     text: &str,
-    _handle: WorkspaceSettingsHandle,
+    _settings: &SettingsWithEditor,
     cache: &mut NodeCache,
 ) -> ParseResult {
     let parse = parse_grit_with_cache(text, cache);
@@ -311,7 +333,7 @@ fn debug_formatter_ir(
     biome_path: &BiomePath,
     document_file_source: &DocumentFileSource,
     parse: AnyParse,
-    settings: WorkspaceSettingsHandle,
+    settings: &SettingsWithEditor,
 ) -> Result<String, WorkspaceError> {
     let options = settings.format_options::<GritLanguage>(biome_path, document_file_source);
 
@@ -327,7 +349,7 @@ fn format(
     biome_path: &BiomePath,
     document_file_source: &DocumentFileSource,
     parse: AnyParse,
-    settings: WorkspaceSettingsHandle,
+    settings: &SettingsWithEditor,
 ) -> Result<Printed, WorkspaceError> {
     let options = settings.format_options::<GritLanguage>(biome_path, document_file_source);
 
@@ -345,7 +367,7 @@ fn format_range(
     biome_path: &BiomePath,
     document_file_source: &DocumentFileSource,
     parse: AnyParse,
-    settings: WorkspaceSettingsHandle,
+    settings: &SettingsWithEditor,
     range: TextRange,
 ) -> Result<Printed, WorkspaceError> {
     let options = settings.format_options::<GritLanguage>(biome_path, document_file_source);
@@ -360,7 +382,7 @@ fn format_on_type(
     biome_path: &BiomePath,
     document_file_source: &DocumentFileSource,
     parse: AnyParse,
-    settings: WorkspaceSettingsHandle,
+    settings: &SettingsWithEditor,
     offset: TextSize,
 ) -> Result<Printed, WorkspaceError> {
     let options = settings.format_options::<GritLanguage>(biome_path, document_file_source);
@@ -397,7 +419,9 @@ fn format_on_type(
 fn lint(params: LintParams) -> LintResults {
     let _ = debug_span!("Linting Grit file", path =? params.path, language =? params.language)
         .entered();
-    let diagnostics = params.parse.into_diagnostics();
+    let diagnostics = params
+        .parse
+        .into_serde_diagnostics(params.diagnostic_offset);
 
     let diagnostic_count = diagnostics.len() as u32;
     let skipped_diagnostics = diagnostic_count.saturating_sub(diagnostics.len() as u32);
@@ -415,12 +439,11 @@ fn lint(params: LintParams) -> LintResults {
 
 #[tracing::instrument(level = "debug", skip(params))]
 pub(crate) fn fix_all(params: FixAllParams) -> Result<FixFileResult, WorkspaceError> {
-    // We don't have analyzer rules yet
     let tree: GritRoot = params.parse.tree();
     let code = if params.should_format {
         format_node(
             params
-                .workspace
+                .settings
                 .format_options::<GritLanguage>(params.biome_path, &params.document_file_source),
             tree.syntax(),
         )?

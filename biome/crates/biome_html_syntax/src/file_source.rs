@@ -14,28 +14,102 @@ pub struct HtmlFileSource {
 #[derive(
     Debug, Clone, Default, Copy, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize,
 )]
-enum HtmlVariant {
+pub enum HtmlTextExpressions {
     #[default]
-    Standard,
+    None,
+    Single,
+    Double,
+}
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum HtmlVariant {
+    Standard(HtmlTextExpressions),
+    /// Use this variant to parse an Astro file
     Astro,
+    /// Use this variant to parse a Vue file
+    Vue,
+    /// Use this variant to parse a Svelte file
+    Svelte,
+}
+
+impl Default for HtmlVariant {
+    fn default() -> Self {
+        Self::Standard(HtmlTextExpressions::None)
+    }
 }
 
 impl HtmlFileSource {
     pub fn html() -> Self {
         Self {
-            variant: HtmlVariant::Standard,
+            variant: HtmlVariant::default(),
         }
     }
+
+    /// Returns `true` if the current file is `.html` and doesn't support
+    /// any text expression capability
+    pub const fn is_html(&self) -> bool {
+        matches!(self.variant, HtmlVariant::Standard(_))
+    }
+
+    pub const fn is_vue(&self) -> bool {
+        matches!(self.variant, HtmlVariant::Vue)
+    }
+
+    pub const fn is_svelte(&self) -> bool {
+        matches!(self.variant, HtmlVariant::Svelte)
+    }
+
+    pub const fn is_astro(&self) -> bool {
+        matches!(self.variant, HtmlVariant::Astro)
+    }
+
+    pub const fn supports_components(&self) -> bool {
+        self.is_vue() || self.is_svelte() || self.is_astro()
+    }
+
+    pub fn variant(&self) -> &HtmlVariant {
+        &self.variant
+    }
+
+    pub fn text_expressions(&self) -> Option<&HtmlTextExpressions> {
+        if let HtmlVariant::Standard(text_expressions) = &self.variant {
+            Some(text_expressions)
+        } else {
+            None
+        }
+    }
+
+    pub fn html_with_text_expressions() -> Self {
+        Self {
+            variant: HtmlVariant::Standard(HtmlTextExpressions::Double),
+        }
+    }
+
     pub fn astro() -> Self {
         Self {
             variant: HtmlVariant::Astro,
         }
     }
 
+    pub fn vue() -> Self {
+        Self {
+            variant: HtmlVariant::Vue,
+        }
+    }
+    pub fn svelte() -> Self {
+        Self {
+            variant: HtmlVariant::Svelte,
+        }
+    }
+
     /// Try to return the HTML file source corresponding to this file name from well-known files
-    pub fn try_from_well_known(_: &Utf8Path) -> Result<Self, FileSourceError> {
-        // TODO: to be implemented
-        Err(FileSourceError::UnknownFileName)
+    pub fn try_from_well_known(path: &Utf8Path) -> Result<Self, FileSourceError> {
+        let Some(extension) = path.extension() else {
+            return Err(FileSourceError::MissingFileExtension);
+        };
+
+        Self::try_from_extension(extension)
     }
 
     /// Try to return the HTML file source corresponding to this file extension
@@ -44,6 +118,8 @@ impl HtmlFileSource {
         match extension {
             "html" => Ok(Self::html()),
             "astro" => Ok(Self::astro()),
+            "vue" => Ok(Self::vue()),
+            "svelte" => Ok(Self::svelte()),
             _ => Err(FileSourceError::UnknownExtension),
         }
     }
@@ -61,6 +137,8 @@ impl HtmlFileSource {
         match language_id {
             "html" => Ok(Self::html()),
             "astro" => Ok(Self::astro()),
+            "vuejs" | "vue" => Ok(Self::vue()),
+            "svelte" => Ok(Self::svelte()),
             _ => Err(FileSourceError::UnknownLanguageId),
         }
     }

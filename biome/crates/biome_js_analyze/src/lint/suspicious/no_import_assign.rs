@@ -6,6 +6,7 @@ use biome_js_semantic::ReferencesExtensions;
 use biome_js_syntax::{AnyJsImportSpecifier, JsIdentifierAssignment, JsIdentifierBinding};
 
 use biome_rowan::AstNode;
+use biome_rule_options::no_import_assign::NoImportAssignOptions;
 
 declare_lint_rule! {
     ///  Disallow assigning to imported bindings
@@ -62,7 +63,7 @@ impl Rule for NoImportAssign {
     /// The first element of the tuple is the invalid `JsIdentifierAssignment`, the second element of the tuple is the imported `JsIdentifierBinding`.
     type State = (JsIdentifierAssignment, JsIdentifierBinding);
     type Signals = Box<[Self::State]>;
-    type Options = ();
+    type Options = NoImportAssignOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let label_statement = ctx.query();
@@ -97,7 +98,7 @@ impl Rule for NoImportAssign {
                 let model = ctx.model();
                 for reference in ident_binding.all_writes(model) {
                     invalid_assign_list.push((
-                        JsIdentifierAssignment::cast_ref(reference.syntax())?,
+                        JsIdentifierAssignment::cast_ref(&reference.syntax())?,
                         ident_binding.clone(),
                     ));
                 }

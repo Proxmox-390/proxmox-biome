@@ -1,17 +1,14 @@
-use crate::{
-    JsRuleAction,
-    services::{control_flow::AnyJsControlFlowRoot, semantic::Semantic},
-};
+use crate::{JsRuleAction, services::semantic::Semantic};
 use biome_analyze::{
     FixKind, Rule, RuleDiagnostic, RuleSource, context::RuleContext, declare_lint_rule,
 };
 use biome_console::markup;
 use biome_diagnostics::Severity;
-
 use biome_js_factory::make;
 use biome_js_semantic::{ReferencesExtensions, Scope, SemanticModel, SemanticScopeExtensions};
 use biome_js_syntax::*;
 use biome_rowan::{AstNode, BatchMutationExt, declare_node_union};
+use biome_rule_options::use_const::UseConstOptions;
 
 declare_lint_rule! {
     /// Require `const` declarations for variables that are only assigned once.
@@ -73,6 +70,19 @@ declare_lint_rule! {
     /// a; // the variable is read before its assignment
     /// a = 0;
     /// ```
+    ///
+    /// ## Caveats
+    ///
+    /// Since v2.2, the rule no longer reports variables that are read in an inner function before being written.
+    /// This can result in false negatives. For example, the following code is now valid:
+    ///
+    /// ```js
+    /// let a;
+    /// function f() {
+    ///     return a; // read
+    /// }
+    /// a = 0; // written
+    /// ```
     pub UseConst {
         version: "1.0.0",
         name: "useConst",
@@ -88,11 +98,17 @@ impl Rule for UseConst {
     type Query = Semantic<AnyJsVariableDeclaration>;
     type State = ConstBindings;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = UseConstOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let declaration = ctx.query();
         let model = ctx.model();
+
+        // `let` declarations inside snippets are allowed
+        let file_source = ctx.source_type::<JsFileSource>();
+        if file_source.is_embedded_source() && declaration.is_let() {
+            return None;
+        }
 
         // Not a let declaration or inside a for-loop init
         if !declaration.is_let() || declaration.parent::<JsForStatement>().is_some() {
@@ -218,7 +234,7 @@ fn check_binding_can_be_const(
 
     let binding_scope = binding.scope(model);
     let write = writes.next()?;
-    // If teher are multiple assignement or the write is not in the same scope
+    // If there are multiple assignment or the write is not in the same scope
     if writes.next().is_some() || write.scope() != binding_scope {
         return None;
     }
@@ -230,23 +246,8 @@ fn check_binding_can_be_const(
         return None;
     }
 
-    let mut refs = binding.all_references(model);
-    // If a read precedes the write, don't report it.
-    // Ignore reads that are in an inner control flow root.
-    // For example, this ignores reads inside a function:
-    // ```js
-    // let v;
-    // function f() { v; }
-    // ```
-    let next_ref = refs.find(|x| {
-        x.is_write()
-            || !x
-                .scope()
-                .ancestors()
-                .take_while(|scope| scope != &binding_scope)
-                .any(|scope| AnyJsControlFlowRoot::can_cast(scope.syntax().kind()))
-    });
-    if matches!(next_ref, Some(next_ref) if next_ref.is_read()) {
+    // If a read occurs before a write.
+    if binding.all_references(model).next()?.is_read() {
         return None;
     }
 

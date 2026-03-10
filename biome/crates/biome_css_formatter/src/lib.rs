@@ -6,8 +6,12 @@ mod css;
 mod cst;
 mod generated;
 mod prelude;
+mod scss;
 mod separated;
+mod tailwind;
+mod trivia;
 mod utils;
+mod verbatim;
 
 use std::borrow::Cow;
 
@@ -15,13 +19,15 @@ use crate::comments::CssCommentStyle;
 pub(crate) use crate::context::CssFormatContext;
 use crate::context::CssFormatOptions;
 use crate::cst::FormatCssSyntaxNode;
+use crate::prelude::{format_bogus_node, format_suppressed_node};
+pub(crate) use crate::trivia::*;
 use biome_css_syntax::{
     AnyCssDeclarationBlock, AnyCssRule, AnyCssRuleBlock, AnyCssValue, CssLanguage, CssSyntaxKind,
-    CssSyntaxNode, CssSyntaxToken,
+    CssSyntaxNode, CssSyntaxNodeWithOffset, CssSyntaxToken,
 };
 use biome_formatter::comments::Comments;
 use biome_formatter::prelude::*;
-use biome_formatter::trivia::format_skipped_token_trivia;
+use biome_formatter::trivia::{FormatToken, format_skipped_token_trivia};
 use biome_formatter::{
     CstFormatContext, FormatContext, FormatLanguage, FormatOwnedWithRule, FormatRefWithRule,
     TransformSourceMap, write,
@@ -185,7 +191,7 @@ where
     N: AstNode<Language = CssLanguage>,
 {
     fn fmt(&self, node: &N, f: &mut CssFormatter) -> FormatResult<()> {
-        if self.is_suppressed(node, f) {
+        if self.is_suppressed(node, f) || self.is_global_suppressed(node, f) {
             return write!(f, [format_suppressed_node(node.syntax())]);
         }
 
@@ -200,6 +206,11 @@ where
     /// Returns `true` if the node has a suppression comment and should use the same formatting as in the source document.
     fn is_suppressed(&self, node: &N, f: &CssFormatter) -> bool {
         f.context().comments().is_suppressed(node.syntax())
+    }
+
+    /// Returns `true` if the node has a global suppression comment and should use the same formatting as in the source document.
+    fn is_global_suppressed(&self, node: &N, f: &CssFormatter) -> bool {
+        f.context().comments().is_global_suppressed(node.syntax())
     }
 
     /// Formats the [leading comments](biome_formatter::comments#leading-comments) of the node.
@@ -284,6 +295,7 @@ impl FormatLanguage for CssFormatLanguage {
         self,
         root: &CssSyntaxNode,
         source_map: Option<TransformSourceMap>,
+        _delegate_fmt_embedded_nodes: bool,
     ) -> Self::Context {
         let comments = Comments::from_node(root, &CssCommentStyle, source_map.as_ref());
         CssFormatContext::new(self.options, comments).with_source_map(source_map)
@@ -304,20 +316,29 @@ impl FormatRule<CssSyntaxToken> for FormatCssSyntaxToken {
     fn fmt(&self, token: &CssSyntaxToken, f: &mut Formatter<Self::Context>) -> FormatResult<()> {
         f.state_mut().track_token(token);
 
-        write!(f, [format_skipped_token_trivia(token)])?;
+        self.format_skipped_token_trivia(token, f)?;
 
         if token.kind().is_contextual_keyword() {
             let original = token.text_trimmed();
             match original.to_ascii_lowercase_cow() {
-                Cow::Borrowed(_) => write!(f, [format_trimmed_token(token)]),
-                Cow::Owned(lowercase) => write!(
-                    f,
-                    [dynamic_text(&lowercase, token.text_trimmed_range().start())]
-                ),
+                Cow::Borrowed(_) => self.format_trimmed_token_trivia(token, f),
+                Cow::Owned(lowercase) => {
+                    write!(f, [text(&lowercase, token.text_trimmed_range().start())])
+                }
             }
         } else {
-            write!(f, [format_trimmed_token(token)])
+            self.format_trimmed_token_trivia(token, f)
         }
+    }
+}
+
+impl FormatToken<CssLanguage, CssFormatContext> for FormatCssSyntaxToken {
+    fn format_skipped_token_trivia(
+        &self,
+        token: &CssSyntaxToken,
+        f: &mut Formatter<CssFormatContext>,
+    ) -> FormatResult<()> {
+        format_skipped_token_trivia(token).fmt(f)
     }
 }
 
@@ -363,7 +384,17 @@ pub fn format_node(
     options: CssFormatOptions,
     root: &CssSyntaxNode,
 ) -> FormatResult<Formatted<CssFormatContext>> {
-    biome_formatter::format_node(root, CssFormatLanguage::new(options))
+    biome_formatter::format_node(root, CssFormatLanguage::new(options), false)
+}
+
+/// Formats a CSS syntax tree.
+///
+/// It returns the [Formatted] document that can be printed to a string.
+pub fn format_node_with_offset(
+    options: CssFormatOptions,
+    root: &CssSyntaxNodeWithOffset,
+) -> FormatResult<Formatted<CssFormatContext>> {
+    biome_formatter::format_node_with_offset(root, CssFormatLanguage::new(options), false)
 }
 
 /// Formats a single node within a file, supported by Biome.
@@ -385,11 +416,12 @@ mod tests {
     use crate::context::CssFormatOptions;
     use crate::format_node;
     use biome_css_parser::{CssParserOptions, parse_css};
+    use biome_css_syntax::CssFileSource;
 
     #[test]
     fn smoke_test() {
         let src = r#"html {}"#;
-        let parse = parse_css(src, CssParserOptions::default());
+        let parse = parse_css(src, CssFileSource::css(), CssParserOptions::default());
         let options = CssFormatOptions::default();
         let formatted = format_node(options, &parse.syntax()).unwrap();
         assert_eq!(formatted.print().unwrap().as_code(), "html {\n}\n");

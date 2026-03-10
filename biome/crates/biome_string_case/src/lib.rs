@@ -4,6 +4,11 @@
 
 use std::{borrow::Cow, cmp::Ordering, ffi::OsStr};
 
+use caseless::Caseless;
+
+#[cfg(feature = "biome_rowan")]
+pub mod comparable_token;
+
 /// Represents the case of a string.
 ///
 /// Note that some cases are supersets of others.
@@ -34,31 +39,31 @@ pub enum Case {
     /// ASCII numbers
     Number = 1 << 0,
     /// Alphanumeric Characters that cannot be in lowercase or uppercase (numbers and syllabary)
-    Uni = Case::Number as u16 | (1 << 1),
+    Uni = Self::Number as u16 | (1 << 1),
     /// A, B1, C42
     NumberableCapital = 1 << 2,
     /// UPPERCASE
-    Upper = Case::NumberableCapital as u16 | (1 << 3),
+    Upper = Self::NumberableCapital as u16 | (1 << 3),
     // CONSTANT_CASE
-    Constant = Case::Upper as u16 | (1 << 4),
+    Constant = Self::Upper as u16 | (1 << 4),
     /// PascalCase
-    Pascal = Case::NumberableCapital as u16 | (1 << 5),
+    Pascal = Self::NumberableCapital as u16 | (1 << 5),
     /// lowercase
-    Lower = Case::Number as u16 | (1 << 6),
+    Lower = Self::Number as u16 | (1 << 6),
     /// snake_case
-    Snake = Case::Lower as u16 | (1 << 7),
+    Snake = Self::Lower as u16 | (1 << 7),
     /// kebab-case
-    Kebab = Case::Lower as u16 | (1 << 8),
+    Kebab = Self::Lower as u16 | (1 << 8),
     // camelCase
-    Camel = Case::Lower as u16 | (1 << 9),
+    Camel = Self::Lower as u16 | (1 << 9),
     /// Unknown case
     #[default]
-    Unknown = Case::Camel as u16
-        | Case::Kebab as u16
-        | Case::Snake as u16
-        | Case::Pascal as u16
-        | Case::Constant as u16
-        | Case::Uni as u16
+    Unknown = Self::Camel as u16
+        | Self::Kebab as u16
+        | Self::Snake as u16
+        | Self::Pascal as u16
+        | Self::Constant as u16
+        | Self::Uni as u16
         | (1 << 10),
 }
 
@@ -211,10 +216,12 @@ impl Case {
                 word_separator = true;
                 continue;
             }
-            if let Some(next) = next {
-                if i != 0 && current.is_uppercase() && next.is_lowercase() {
-                    word_separator = true;
-                }
+            if let Some(next) = next
+                && i != 0
+                && current.is_uppercase()
+                && next.is_lowercase()
+            {
+                word_separator = true;
             }
             if word_separator {
                 match self {
@@ -253,10 +260,11 @@ impl Case {
                 Self::Number | Self::Unknown => (),
             }
             word_separator = false;
-            if let Some(next) = next {
-                if current.is_lowercase() && next.is_uppercase() {
-                    word_separator = true;
-                }
+            if let Some(next) = next
+                && current.is_lowercase()
+                && next.is_uppercase()
+            {
+                word_separator = true;
             }
         }
         output
@@ -639,24 +647,31 @@ pub trait StrLikeExtension: ToOwned {
     /// Returns the same value as String::to_lowercase. The only difference
     /// is that this functions returns ```Cow``` and does not allocate
     /// if the string is already in lowercase.
-    fn to_ascii_lowercase_cow(&self) -> Cow<Self>;
+    fn to_ascii_lowercase_cow(&self) -> Cow<'_, Self>;
 
     /// Compare two strings using a natural ASCII order.
     ///
     /// Uppercase letters come first (e.g. `A` < `a` < `B` < `b`)
     /// and number are compared in a human way (e.g. `9` < `10`).
     fn ascii_nat_cmp(&self, other: &Self) -> Ordering;
+
+    /// Compare two strings using lexicographically by their byte values.
+    ///
+    ///  This orders Unicode code points based on their positions in the code charts.
+    fn lexicographic_cmp(&self, other: &Self) -> Ordering;
 }
 
 pub trait StrOnlyExtension: ToOwned {
     /// Returns the same value as String::to_lowercase. The only difference
     /// is that this functions returns ```Cow``` and does not allocate
     /// if the string is already in lowercase.
-    fn to_lowercase_cow(&self) -> Cow<Self>;
+    fn to_lowercase_cow(&self) -> Cow<'_, Self>;
+    /// Returns Unicode case-folded text as a Cow, allocating only when needed.
+    fn to_casefold_cow(&self) -> Cow<'_, Self>;
 }
 
 impl StrLikeExtension for str {
-    fn to_ascii_lowercase_cow(&self) -> Cow<Self> {
+    fn to_ascii_lowercase_cow(&self) -> Cow<'_, Self> {
         let has_ascii_uppercase = self.bytes().any(|b| b.is_ascii_uppercase());
         if has_ascii_uppercase {
             #[expect(clippy::disallowed_methods)]
@@ -669,10 +684,14 @@ impl StrLikeExtension for str {
     fn ascii_nat_cmp(&self, other: &Self) -> Ordering {
         self.as_bytes().ascii_nat_cmp(other.as_bytes())
     }
+
+    fn lexicographic_cmp(&self, other: &Self) -> Ordering {
+        self.as_bytes().lexicographic_cmp(other.as_bytes())
+    }
 }
 
 impl StrOnlyExtension for str {
-    fn to_lowercase_cow(&self) -> Cow<Self> {
+    fn to_lowercase_cow(&self) -> Cow<'_, Self> {
         let has_uppercase = self.chars().any(char::is_uppercase);
         if has_uppercase {
             #[expect(clippy::disallowed_methods)]
@@ -681,10 +700,30 @@ impl StrOnlyExtension for str {
             Cow::Borrowed(self)
         }
     }
+
+    fn to_casefold_cow(&self) -> Cow<'_, Self> {
+        // Fast path: check if case folding changes anything without allocating
+        let mut original = self.chars();
+        let mut folded = self.chars().default_case_fold();
+
+        let differs = loop {
+            match (original.next(), folded.next()) {
+                (None, None) => break false,
+                (Some(o), Some(f)) if o == f => {}
+                _ => break true,
+            }
+        };
+
+        if differs {
+            Cow::Owned(caseless::default_case_fold_str(self))
+        } else {
+            Cow::Borrowed(self)
+        }
+    }
 }
 
 impl StrLikeExtension for std::ffi::OsStr {
-    fn to_ascii_lowercase_cow(&self) -> Cow<Self> {
+    fn to_ascii_lowercase_cow(&self) -> Cow<'_, Self> {
         let has_ascii_uppercase = self
             .as_encoded_bytes()
             .iter()
@@ -701,10 +740,14 @@ impl StrLikeExtension for std::ffi::OsStr {
         self.as_encoded_bytes()
             .ascii_nat_cmp(other.as_encoded_bytes())
     }
+
+    fn lexicographic_cmp(&self, other: &Self) -> Ordering {
+        self.as_encoded_bytes().cmp(other.as_encoded_bytes())
+    }
 }
 
 impl StrLikeExtension for [u8] {
-    fn to_ascii_lowercase_cow(&self) -> Cow<Self> {
+    fn to_ascii_lowercase_cow(&self) -> Cow<'_, Self> {
         let has_ascii_uppercase = self.iter().any(|b| b.is_ascii_uppercase());
         if has_ascii_uppercase {
             Cow::Owned(self.to_ascii_lowercase())
@@ -715,6 +758,10 @@ impl StrLikeExtension for [u8] {
 
     fn ascii_nat_cmp(&self, other: &Self) -> Ordering {
         CldrAsciiCollator.cmp(self.iter().copied(), other.iter().copied())
+    }
+
+    fn lexicographic_cmp(&self, other: &Self) -> Ordering {
+        self.iter().copied().cmp(other.iter().copied())
     }
 }
 
@@ -1158,6 +1205,13 @@ mod tests {
         assert_eq!("te😀st", "te😀St".to_lowercase_cow());
 
         assert!(matches!("tešt".to_lowercase_cow(), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn to_casefold_cow() {
+        assert_eq!("ss", "ẞ".to_casefold_cow());
+        assert_eq!("ss", "ß".to_casefold_cow());
+        assert!(matches!("test".to_casefold_cow(), Cow::Borrowed(_)));
     }
 
     #[test]

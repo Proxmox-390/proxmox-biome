@@ -1,30 +1,64 @@
 mod binding;
 mod collector;
+mod diagnostics;
+mod module_resolver;
 mod scope;
-mod scoped_resolver;
+mod utils;
 mod visitor;
 
-use std::{borrow::Cow, collections::BTreeMap, ops::Deref, sync::Arc};
-
-use biome_js_syntax::{AnyJsExpression, AnyJsImportLike};
+use crate::ModuleGraph;
+use biome_js_semantic::ScopeId;
+use biome_js_syntax::AnyJsImportLike;
 use biome_js_type_info::{
-    BindingId, GLOBAL_RESOLVER, GLOBAL_UNKNOWN_ID, ImportSymbol, ResolvedTypeData, ResolvedTypeId,
-    ScopeId, TypeData, TypeId, TypeReference, TypeReferenceQualifier, TypeResolver,
-    TypeResolverLevel,
+    FormatTypeContext, ImportSymbol, ResolvedTypeId, TypeData, TypeReference,
 };
 use biome_jsdoc_comment::JsdocComment;
 use biome_resolver::ResolvedPath;
-use biome_rowan::{AstNode, Text, TextRange};
+use biome_rowan::{Text, TextRange};
+use camino::Utf8Path;
+use indexmap::IndexMap;
 use rust_lapper::Lapper;
 use rustc_hash::FxHashMap;
+use std::collections::BTreeSet;
+use std::fmt::{Display, Formatter};
+use std::{collections::BTreeMap, ops::Deref, sync::Arc};
 
-use crate::ModuleGraph;
+use scope::JsScope;
 
-use scope::{JsScope, JsScopeData, TsBindingReference};
-
+use crate::diagnostics::ModuleDiagnostic;
 pub(super) use binding::JsBindingData;
-pub use scoped_resolver::ScopedResolver;
+pub use diagnostics::JsModuleInfoDiagnostic;
+pub use module_resolver::ModuleResolver;
 pub(crate) use visitor::JsModuleVisitor;
+
+/// Type augmentation data for a binding from the semantic model.
+///
+/// Stores type inference results and JSDoc comments that enrich the
+/// base binding information from the semantic model.
+#[derive(Debug, Clone)]
+pub struct BindingTypeData {
+    /// The inferred type of this binding.
+    pub ty: TypeReference,
+
+    /// JSDoc comment associated with this binding, if any.
+    pub jsdoc: Option<JsdocComment>,
+
+    /// Ranges where this binding is exported.
+    pub export_ranges: Vec<TextRange>,
+}
+
+impl Display for BindingTypeData {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let formatted = biome_formatter::format!(FormatTypeContext, [&self])
+            .expect("Formatting not to throw any FormatErrors");
+        f.write_str(
+            formatted
+                .print()
+                .expect("Expected a valid document")
+                .as_code(),
+        )
+    }
+}
 
 /// Information restricted to a single module in the [ModuleGraph].
 #[derive(Clone, Debug)]
@@ -41,22 +75,21 @@ impl Deref for JsModuleInfo {
 impl JsModuleInfo {
     /// Returns an iterator over all the static and dynamic imports in this
     /// module.
-    pub fn all_import_paths(&self) -> impl Iterator<Item = ResolvedPath> + use<> {
-        let module_info = self.0.as_ref();
+    pub fn all_import_paths(&self) -> impl Iterator<Item = JsImportPath> + use<> {
         ImportPathIterator {
-            static_import_paths: module_info.static_import_paths.clone(),
-            dynamic_import_paths: module_info.dynamic_import_paths.clone(),
+            module_info: self.clone(),
+            index: 0,
         }
     }
 
-    pub fn as_resolver(&self) -> &impl TypeResolver {
-        self.0.as_ref()
+    pub fn diagnostics(&self) -> &[ModuleDiagnostic] {
+        self.diagnostics.as_slice()
     }
 
     /// Finds an exported symbol by `name`, using the `module_graph` to
     /// lookup re-exports if necessary.
     #[inline]
-    pub fn find_exported_symbol(
+    pub fn find_js_exported_symbol(
         &self,
         module_graph: &ModuleGraph,
         name: &str,
@@ -79,15 +112,61 @@ impl JsModuleInfo {
     pub fn global_scope(&self) -> JsScope {
         JsScope {
             info: self.0.clone(),
-            id: ScopeId::new(0),
+            scope: self.0.semantic_model.global_scope(),
         }
     }
 
     /// Returns the scope to be used for the given `range`.
+    ///
+    /// This finds the most specific scope that covers the given text range.
+    /// If the range is empty, returns the global scope.
     pub fn scope_for_range(&self, range: TextRange) -> JsScope {
+        // Guard against empty ranges - semantic_model.scope_for_range debug-asserts on empty ranges
+        if range.len() == 0.into() {
+            return self.global_scope();
+        }
+
         JsScope {
             info: self.0.clone(),
-            id: scope_id_for_range(&self.0.scope_by_range, range),
+            scope: self.0.semantic_model.scope_for_range(range),
+        }
+    }
+
+    /// Returns a serializable representation of this module.
+    pub fn dump(&self) -> SerializedJsModuleInfo {
+        SerializedJsModuleInfo {
+            static_imports: self
+                .static_imports
+                .iter()
+                .map(|(text, static_import)| {
+                    (text.to_string(), static_import.specifier.to_string())
+                })
+                .collect(),
+
+            static_import_paths: self
+                .static_import_paths
+                .iter()
+                .map(|(specifier, JsImportPath { resolved_path, .. })| {
+                    (
+                        specifier.to_string(),
+                        resolved_path
+                            .as_ref()
+                            .map_or_else(|_| specifier.to_string(), ToString::to_string),
+                    )
+                })
+                .collect(),
+
+            exports: self
+                .exports
+                .iter()
+                .map(|(text, _)| text.to_string())
+                .collect::<BTreeSet<_>>(),
+
+            dynamic_imports: self
+                .dynamic_import_paths
+                .iter()
+                .map(|(text, _)| text.to_string())
+                .collect::<BTreeSet<_>>(),
         }
     }
 }
@@ -109,11 +188,11 @@ pub struct JsModuleInfoInner {
 
     /// Map of all the paths from static imports in the module.
     ///
-    /// Maps from the source specifier name to a [JsResolvedPath] with the
+    /// Maps from the source specifier name to a [JsImportPath] with the
     /// absolute path it resolves to. The resolved path may be looked up as key
     /// in the [ModuleGraph::data] map, although it is not required to exist
     /// (for instance, if the path is outside the project's scope).
-    pub static_import_paths: BTreeMap<Text, ResolvedPath>,
+    pub static_import_paths: IndexMap<Text, JsImportPath>,
 
     /// Map of all dynamic import paths found in the module for which the import
     /// specifier could be statically determined.
@@ -122,14 +201,14 @@ pub struct JsModuleInfoInner {
     /// (for instance, because a template string with variables is used) will be
     /// omitted from this map.
     ///
-    /// Maps from the source specifier name to a [JsResolvedPath] with the
+    /// Maps from the source specifier name to a [JsImportPath] with the
     /// absolute path it resolves to. The resolved path may be looked up as key
     /// in the [ModuleGraph::data] map, although it is not required to exist
     /// (for instance, if the path is outside the project's scope).
     ///
     /// Paths found in `require()` expressions in CommonJS sources are also
     /// included with the dynamic import paths.
-    pub dynamic_import_paths: BTreeMap<Text, ResolvedPath>,
+    pub dynamic_import_paths: IndexMap<Text, JsImportPath>,
 
     /// Map of exports from the module.
     ///
@@ -143,31 +222,42 @@ pub struct JsModuleInfoInner {
 
     /// Re-exports that apply to all symbols from another module, without
     /// assigning a name to them.
-    pub blanket_reexports: Box<[JsReexport]>,
+    pub blanket_reexports: Vec<JsReexport>,
 
-    /// Collection of all the declarations in the module.
-    pub(crate) bindings: Box<[JsBindingData]>,
+    /// Semantic model provided by the workspace service.
+    ///
+    /// Contains scope and binding information. This replaces the previous
+    /// duplicated scope/binding tracking that was built from semantic events.
+    pub semantic_model: std::sync::Arc<biome_js_semantic::SemanticModel>,
+
+    /// Type augmentation data: maps binding ranges to their type information and JSDoc.
+    ///
+    /// This enriches the semantic model's bindings with type inference results
+    /// and documentation comments.
+    pub binding_type_data: FxHashMap<TextRange, BindingTypeData>,
 
     /// Parsed expressions, mapped from their range to their type ID.
-    pub(crate) expressions: FxHashMap<TextRange, TypeId>,
-
-    /// All scopes in this module.
-    ///
-    /// The first entry is expected to be the global scope.
-    pub(crate) scopes: Box<[JsScopeData]>,
-
-    /// Lookup tree to find scopes by text range.
-    pub(crate) scope_by_range: Lapper<u32, ScopeId>,
+    pub(crate) expressions: FxHashMap<TextRange, ResolvedTypeId>,
 
     /// Collection of all types in the module.
-    pub(crate) types: Box<[TypeData]>,
+    ///
+    /// We do not store these using our `TypeStore`, because once the module
+    /// info is constructed, no new types can be registered in it, and we have
+    /// no use for a hash table anymore.
+    pub(crate) types: Vec<Arc<TypeData>>,
+
+    /// Diagnostics emitted during the resolution of the module
+    pub(crate) diagnostics: Vec<ModuleDiagnostic>,
+
+    /// Whether type inference was enabled when this module info was created
+    pub(crate) infer_types: bool,
 }
 
 #[derive(Debug, Default)]
-pub struct Exports(pub(crate) BTreeMap<Text, JsExport>);
+pub struct Exports(pub(crate) IndexMap<Text, JsExport>);
 
 impl Deref for Exports {
-    type Target = BTreeMap<Text, JsExport>;
+    type Target = IndexMap<Text, JsExport>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -175,22 +265,50 @@ impl Deref for Exports {
 }
 
 #[derive(Debug, Default)]
-pub struct Imports(pub(crate) BTreeMap<Text, JsImport>);
+pub struct Imports(pub(crate) IndexMap<Text, JsImport>);
 
 impl Deref for Imports {
-    type Target = BTreeMap<Text, JsImport>;
+    type Target = IndexMap<Text, JsImport>;
+
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum JsImportPhase {
+    #[default]
+    Default,
+    /// https://tc39.es/proposal-defer-import-eval/
+    Defer,
+    /// https://tc39.es/proposal-source-phase-imports/
+    Source,
+    /// Technically this is not an import phase defined in ECMAScript, but type-only imports in
+    /// TypeScript cannot be imported in other phases.
+    Type,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JsImportPath {
+    pub resolved_path: ResolvedPath,
+    pub phase: JsImportPhase,
+}
+
+impl JsImportPath {
+    pub fn as_path(&self) -> Option<&Utf8Path> {
+        self.resolved_path.as_path()
     }
 }
 
 static_assertions::assert_impl_all!(JsModuleInfo: Send, Sync);
 
 impl JsModuleInfoInner {
-    /// Returns one of the bindings by ID.
+    /// Returns type augmentation data for a binding by its range.
+    ///
+    /// This is the replacement for the old `binding()` method.
     #[inline]
-    pub fn binding(&self, binding_id: BindingId) -> &JsBindingData {
-        &self.bindings[binding_id.index()]
+    pub fn binding_type_data(&self, binding_range: TextRange) -> Option<&BindingTypeData> {
+        self.binding_type_data.get(&binding_range)
     }
 
     /// Attempts to find a binding by `name` in the scope with the given
@@ -198,15 +316,22 @@ impl JsModuleInfoInner {
     ///
     /// Traverses upwards in scope if the binding is not found in the given
     /// scope.
-    fn find_binding_in_scope(&self, name: &str, scope_id: ScopeId) -> Option<TsBindingReference> {
-        let mut scope = &self.scopes[scope_id.index()];
+    ///
+    /// Returns the binding's text range for looking up type augmentation data.
+    fn find_binding_in_scope(&self, name: &str, scope_id: ScopeId) -> Option<TextRange> {
+        // Start from the specified scope and walk up the scope chain
+        let mut scope = self.semantic_model.scope_from_id(scope_id);
+
         loop {
-            if let Some(binding_ref) = scope.bindings_by_name.get(name) {
-                return Some(*binding_ref);
+            // Check if this scope has a binding with the given name
+            if let Some(binding) = scope.get_binding(name) {
+                // Return the binding's range for type data lookup
+                return Some(binding.syntax().text_trimmed_range());
             }
 
-            match &scope.parent {
-                Some(parent_id) => scope = &self.scopes[parent_id.index()],
+            // Move to parent scope
+            match scope.parent() {
+                Some(parent) => scope = parent,
                 None => break,
             }
         }
@@ -214,8 +339,31 @@ impl JsModuleInfoInner {
         None
     }
 
+    /// Checks if a binding with the given name in the specified scope is imported.
+    ///
+    /// Returns `true` if the binding is an import declaration, `false` otherwise.
+    fn is_binding_imported(&self, name: &str, scope_id: ScopeId) -> bool {
+        // Start from the specified scope and walk up the scope chain
+        let mut scope = self.semantic_model.scope_from_id(scope_id);
+
+        loop {
+            // Check if this scope has a binding with the given name
+            if let Some(binding) = scope.get_binding(name) {
+                return binding.is_imported();
+            }
+
+            // Move to parent scope
+            match scope.parent() {
+                Some(parent) => scope = parent,
+                None => break,
+            }
+        }
+
+        false
+    }
+
     /// Returns the information about a given import by its syntax node.
-    pub fn get_import_path_by_js_node(&self, node: &AnyJsImportLike) -> Option<&ResolvedPath> {
+    pub fn get_import_path_by_js_node(&self, node: &AnyJsImportLike) -> Option<&JsImportPath> {
         let specifier_text = node.inner_string_text()?;
         let specifier = specifier_text.text();
         if node.is_static_import() {
@@ -224,88 +372,9 @@ impl JsModuleInfoInner {
             self.dynamic_import_paths.get(specifier)
         }
     }
-}
 
-impl TypeResolver for JsModuleInfoInner {
-    fn level(&self) -> TypeResolverLevel {
-        TypeResolverLevel::Module
-    }
-
-    fn find_type(&self, type_data: &TypeData) -> Option<TypeId> {
-        self.types
-            .iter()
-            .position(|data| data == type_data)
-            .map(TypeId::new)
-    }
-
-    fn get_by_id(&self, id: TypeId) -> &TypeData {
-        &self.types[id.index()]
-    }
-
-    fn get_by_resolved_id(&self, id: ResolvedTypeId) -> Option<ResolvedTypeData> {
-        match id.level() {
-            TypeResolverLevel::Module => Some((id, self.get_by_id(id.id())).into()),
-            TypeResolverLevel::Global => Some((id, GLOBAL_RESOLVER.get_by_id(id.id())).into()),
-            TypeResolverLevel::Scope | TypeResolverLevel::Import => None,
-        }
-    }
-
-    fn register_type(&mut self, _type_data: Cow<TypeData>) -> TypeId {
-        panic!("Cannot register new types after the module has been constructed");
-    }
-
-    fn resolve_reference(&self, ty: &TypeReference) -> Option<ResolvedTypeId> {
-        match ty {
-            TypeReference::Qualifier(qualifier) => self.resolve_qualifier(qualifier),
-            TypeReference::Resolved(resolved_id) => Some(*resolved_id),
-            TypeReference::Import(_) => None,
-            TypeReference::Unknown => Some(GLOBAL_UNKNOWN_ID),
-        }
-    }
-
-    fn resolve_qualifier(&self, qualifier: &TypeReferenceQualifier) -> Option<ResolvedTypeId> {
-        if qualifier.path.len() != 1 {
-            return None;
-        }
-
-        if let Some(export) = self.exports.get(&qualifier.path[0]) {
-            export
-                .as_own_export()
-                .and_then(|own_export| match own_export {
-                    JsOwnExport::Binding(binding_id) => {
-                        self.resolve_reference(&self.bindings[binding_id.index()].ty)
-                    }
-                    JsOwnExport::Type(type_id) => Some(*type_id),
-                })
-        } else {
-            GLOBAL_RESOLVER.resolve_qualifier(qualifier)
-        }
-    }
-
-    fn resolve_type_of(&self, identifier: &Text, scope_id: ScopeId) -> Option<ResolvedTypeId> {
-        if let Some(export) = self.exports.get(identifier) {
-            export
-                .as_own_export()
-                .and_then(|own_export| match own_export {
-                    JsOwnExport::Binding(binding_id) => {
-                        self.resolve_reference(&self.bindings[binding_id.index()].ty)
-                    }
-                    JsOwnExport::Type(type_id) => Some(*type_id),
-                })
-        } else {
-            GLOBAL_RESOLVER.resolve_type_of(identifier, scope_id)
-        }
-    }
-
-    fn resolve_expression(&mut self, _scope_id: ScopeId, expr: &AnyJsExpression) -> Cow<TypeData> {
-        self.expressions.get(&expr.range()).map_or_else(
-            || Cow::Owned(TypeData::unknown()),
-            |id| Cow::Borrowed(self.get_by_id(*id)),
-        )
-    }
-
-    fn registered_types(&self) -> &[TypeData] {
-        &self.types
+    pub fn types(&self) -> Vec<&TypeData> {
+        self.types.iter().map(Arc::as_ref).collect()
     }
 }
 
@@ -378,8 +447,22 @@ pub struct JsImport {
 /// which no binding exists, or namespaces defined by exports of another module.
 #[derive(Clone, Debug, PartialEq)]
 pub enum JsOwnExport {
-    Binding(BindingId),
+    /// An export that references a binding by its text range.
+    /// The range can be used to look up type augmentation data.
+    Binding(TextRange),
+    /// An export that directly references a resolved type.
     Type(ResolvedTypeId),
+    /// A namespace export created by `export * as Name from "..."`.
+    ///
+    /// The entire module namespace of the target is re-exported under `Name`,
+    /// making `Name` an own export of this module (it is a namespace object
+    /// created here, not forwarded from the target).
+    ///
+    /// Stores the same [`JsReexport`] information as other reexport kinds so
+    /// that the JSDoc comment on the export statement and the resolved path to
+    /// the target module are both preserved for documentation and type
+    /// inference.
+    Namespace(JsReexport),
 }
 
 /// Information about an export statement that re-exports all symbols from
@@ -394,23 +477,29 @@ pub struct JsReexport {
 }
 
 struct ImportPathIterator {
-    static_import_paths: BTreeMap<Text, ResolvedPath>,
-    dynamic_import_paths: BTreeMap<Text, ResolvedPath>,
+    module_info: JsModuleInfo,
+    index: usize,
 }
 
 impl Iterator for ImportPathIterator {
-    type Item = ResolvedPath;
+    type Item = JsImportPath;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.static_import_paths.is_empty() {
-            self.dynamic_import_paths
-                .pop_first()
-                .map(|(_source, path)| path)
+        let num_static_imports = self.module_info.static_import_paths.len();
+        let resolved_path = if self.index < num_static_imports {
+            let resolved_path = &self.module_info.static_import_paths[self.index];
+            self.index += 1;
+            resolved_path
+        } else if self.index < self.module_info.dynamic_import_paths.len() + num_static_imports {
+            let resolved_path =
+                &self.module_info.dynamic_import_paths[self.index - num_static_imports];
+            self.index += 1;
+            resolved_path
         } else {
-            self.static_import_paths
-                .pop_first()
-                .map(|(_identifier, path)| path)
-        }
+            return None;
+        };
+
+        Some(resolved_path.clone())
     }
 }
 
@@ -424,4 +513,37 @@ fn scope_id_for_range(scope_by_range: &Lapper<u32, ScopeId>, range: TextRange) -
         .map_or(ScopeId::GLOBAL, |interval| {
             ScopeId::new(interval.val.index())
         })
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct SerializedJsModuleInfo {
+    /// Map of all static imports found in the module.
+    ///
+    /// Maps from the local imported name to the absolute path it resolves to.
+    pub static_imports: BTreeMap<String, String>,
+
+    /// Map of all the paths from static imports in the module.
+    ///
+    /// Maps from the source specifier name to the absolute path it resolves to.
+    /// Specifiers that could not be resolved to an absolute will map to the
+    /// specifier itself.
+    ///
+    /// ## Example
+    ///
+    /// ```json
+    /// {
+    ///   "./foo": "/absolute/path/to/foo.js",
+    ///   "react": "react"
+    /// }
+    /// ```
+    pub static_import_paths: BTreeMap<String, String>,
+
+    /// Dynamic imports.
+    pub dynamic_imports: BTreeSet<String>,
+
+    /// Exported symbols.
+    pub exports: BTreeSet<String>,
 }

@@ -4,6 +4,8 @@ Profile-*.json
 .vscode/*
 .idea
 .vs
+.zed/*
+.opencode/plans/
 # Release artifacts
 **/target
 # Ignore test files that contributors could create locally
@@ -15,6 +17,7 @@ Profile-*.json
 **/build
 .pnpm-debug.log
 .vercel
+.claude/settings.local.json
 
 # https://github.com/nnethercote/dhat-rs output file
 dhat-heap.json

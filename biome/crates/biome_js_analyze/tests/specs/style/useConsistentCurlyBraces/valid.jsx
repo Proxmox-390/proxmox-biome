@@ -22,9 +22,27 @@ let baz = 4;
 
 <Foo>{' '}</Foo>
 
+<Foo>{'  '}</Foo>
+
 <Foo>Invalid closing tag {'}'}</Foo>
 
 <Foo>{'Invalid closing tag }'}</Foo>
+
+<Foo>Invalid opening tag {'{'}</Foo>
+
+<Foo>{'Invalid opening tag {'}</Foo>
+
+<Foo>{'start {{'}</Foo>
+
+<Foo>{'}} end'}</Foo>
+
+<Foo>{'<script>'}</Foo>
+
+<Foo>{'a < b'}</Foo>
+
+<Foo>{'&amp;'}</Foo>
+
+<Foo>{'Tom & Jerry'}</Foo>
 
 <Foo>Jupiter {">"} Venus</Foo>
 

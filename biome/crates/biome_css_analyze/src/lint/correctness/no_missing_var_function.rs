@@ -3,6 +3,7 @@ use biome_console::markup;
 use biome_css_syntax::{AnyCssProperty, CssDashedIdentifier, CssDeclaration, CssSyntaxKind};
 use biome_diagnostics::Severity;
 use biome_rowan::{AstNode, Text};
+use biome_rule_options::no_missing_var_function::NoMissingVarFunctionOptions;
 
 use crate::services::semantic::Semantic;
 
@@ -148,10 +149,11 @@ impl Rule for NoMissingVarFunction {
     type Query = Semantic<CssDashedIdentifier>;
     type State = CssDashedIdentifier;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoMissingVarFunctionOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Option<Self::State> {
         let node = ctx.query();
+        let root = ctx.root();
         if is_wrapped_in_var(node) {
             return None;
         }
@@ -169,7 +171,7 @@ impl Rule for NoMissingVarFunction {
         if rule
             .declarations()
             .iter()
-            .flat_map(|decl| decl.property().value())
+            .flat_map(|decl| decl.property(&root).value())
             .any(|value| value.text() == custom_variable_name.text())
         {
             return Some(node.clone());
@@ -181,7 +183,7 @@ impl Rule for NoMissingVarFunction {
             if parent_rule
                 .declarations()
                 .iter()
-                .flat_map(|decl| decl.property().value())
+                .flat_map(|decl| decl.property(&root).value())
                 .any(|value| value.text() == custom_variable_name.text())
             {
                 return Some(node.clone());

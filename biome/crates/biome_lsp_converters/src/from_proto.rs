@@ -1,8 +1,8 @@
-use crate::line_index::LineIndex;
-use crate::{LineCol, PositionEncoding, WideLineCol};
+use crate::PositionEncoding;
 use anyhow::{Context, Result};
-use biome_rowan::{TextRange, TextSize};
-use tower_lsp_server::lsp_types::{Position, Range};
+use biome_line_index::{LineCol, LineIndex, WideLineCol};
+use biome_text_size::{TextRange, TextSize};
+use tower_lsp_server::ls_types::{Position, Range};
 
 /// The function is used to convert a LSP position to TextSize.
 pub fn offset(

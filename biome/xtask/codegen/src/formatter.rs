@@ -11,7 +11,7 @@ use crate::language_kind::{ALL_LANGUAGE_KIND, LanguageKind};
 use git2::{Repository, Status, StatusOptions};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-use xtask::project_root;
+use xtask_glue::project_root;
 
 struct GitRepo {
     repo: Repository,
@@ -21,12 +21,12 @@ struct GitRepo {
 }
 
 impl GitRepo {
-    fn open() -> Self {
+    fn open(allow_dirty: bool, allow_staged: bool) -> Self {
         let root = project_root();
         let repo = Repository::discover(&root).expect("failed to open git repo");
 
-        let mut allow_staged = false;
-        let mut allow_dirty = false;
+        let mut allow_staged = allow_staged;
+        let mut allow_dirty = allow_dirty;
         for arg in env::args() {
             match arg.as_str() {
                 "--allow-staged" => {
@@ -214,7 +214,8 @@ impl ModuleIndex {
                 content.push_str(";\n");
             }
 
-            let content = xtask::reformat_with_command(content, "cargo codegen formatter").unwrap();
+            let content =
+                xtask_glue::reformat_with_command(content, "cargo codegen formatter").unwrap();
 
             let path = path.join("mod.rs");
             let mut file = File::create(&path).unwrap();
@@ -240,8 +241,8 @@ enum NodeKind {
     Union { variants: Vec<String> },
 }
 
-pub fn generate_formatters() {
-    let repo = GitRepo::open();
+pub fn generate_formatters(allow_dirty: bool, allow_staged: bool) {
+    let repo = GitRepo::open(allow_dirty, allow_staged);
 
     for language in ALL_LANGUAGE_KIND {
         generate_formatter(&repo, language);
@@ -452,9 +453,9 @@ fn generate_formatter(repo: &GitRepo, language_kind: LanguageKind) {
         };
 
         let tokens = if allow_overwrite {
-            xtask::reformat_with_command(tokens, "cargo codegen formatter").unwrap()
+            xtask_glue::reformat_with_command(tokens, "cargo codegen formatter").unwrap()
         } else {
-            xtask::reformat_without_preamble(tokens).unwrap()
+            xtask_glue::reformat_without_preamble(tokens).unwrap()
         };
 
         let mut file = File::create(&path).unwrap();
@@ -547,7 +548,7 @@ impl BoilerplateImpls {
             #( #impls )*
         };
 
-        let content = xtask::reformat_with_command(tokens, "cargo codegen formatter").unwrap();
+        let content = xtask_glue::reformat_with_command(tokens, "cargo codegen formatter").unwrap();
         let mut file = File::create(&self.path).unwrap();
         file.write_all(content.as_bytes()).unwrap();
 
@@ -561,9 +562,16 @@ enum NodeDialect {
     Jsx,
     Json,
     Css,
+    Scss,
     Grit,
     Graphql,
     Html,
+    Astro,
+    Svelte,
+    Vue,
+    Tailwind,
+    Yaml,
+    Markdown,
 }
 
 impl NodeDialect {
@@ -574,9 +582,12 @@ impl NodeDialect {
             Self::Jsx,
             Self::Json,
             Self::Css,
+            Self::Scss,
             Self::Grit,
             Self::Graphql,
             Self::Html,
+            Self::Yaml,
+            Self::Markdown,
         ]
     }
 
@@ -591,9 +602,16 @@ impl NodeDialect {
             Self::Jsx => "jsx",
             Self::Json => "json",
             Self::Css => "css",
+            Self::Scss => "scss",
             Self::Grit => "grit",
             Self::Graphql => "graphql",
             Self::Html => "html",
+            Self::Astro => "astro",
+            Self::Svelte => "svelte",
+            Self::Vue => "vue",
+            Self::Tailwind => "tailwind",
+            Self::Yaml => "yaml",
+            Self::Markdown => "markdown",
         }
     }
 
@@ -604,9 +622,16 @@ impl NodeDialect {
             "Ts" => Self::Ts,
             "Json" => Self::Json,
             "Css" => Self::Css,
+            "Scss" => Self::Scss,
             "Grit" => Self::Grit,
             "Graphql" => Self::Graphql,
             "Html" => Self::Html,
+            "Astro" => Self::Astro,
+            "Svelte" => Self::Svelte,
+            "Vue" => Self::Vue,
+            "Tw" => Self::Tailwind,
+            "Yaml" => Self::Yaml,
+            "Md" => Self::Markdown,
             _ => {
                 eprintln!("missing prefix {name}");
                 Self::Js
@@ -831,6 +856,12 @@ fn get_node_concept(
 
             // TODO: implement formatter
             LanguageKind::Yaml => NodeConcept::Auxiliary,
+
+            LanguageKind::Tailwind => match name {
+                _ if name.ends_with("Value") => NodeConcept::Value,
+                "TW_CANDIDATE" => NodeConcept::Expression,
+                _ => NodeConcept::Auxiliary,
+            },
         }
     }
 }
@@ -896,7 +927,8 @@ impl LanguageKind {
             Self::Grit => "GritFormatter",
             Self::Html => "HtmlFormatter",
             Self::Yaml => "YamlFormatter",
-            Self::Markdown => "DemoFormatter",
+            Self::Markdown => "MarkdownFormatter",
+            Self::Tailwind => "TailwindFormatter",
         };
 
         Ident::new(name, Span::call_site())
@@ -911,7 +943,8 @@ impl LanguageKind {
             Self::Grit => "GritFormatContext",
             Self::Html => "HtmlFormatContext",
             Self::Yaml => "YamlFormatContext",
-            Self::Markdown => "DemoFormatterContext",
+            Self::Markdown => "MarkdownFormatContext",
+            Self::Tailwind => "TailwindFormatContext",
         };
 
         Ident::new(name, Span::call_site())

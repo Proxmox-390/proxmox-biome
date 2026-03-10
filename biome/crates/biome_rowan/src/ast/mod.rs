@@ -9,7 +9,8 @@ use biome_text_size::TextRange;
 use serde::Serialize;
 use std::error::Error;
 use std::fmt::{self, Debug, Display, Formatter};
-use std::iter::FusedIterator;
+use std::hash::{Hash, Hasher};
+use std::iter::{FusedIterator, successors};
 use std::marker::PhantomData;
 
 mod batch;
@@ -30,7 +31,7 @@ pub use mutation::{AstNodeExt, AstNodeListExt, AstSeparatedListExt};
 /// bitfield here being twice as large as it needs to cover all nodes as well
 /// as all token kinds
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SyntaxKindSet<L: Language>([u128; 4], PhantomData<L>);
+pub struct SyntaxKindSet<L: Language>([u128; 5], PhantomData<L>);
 
 impl<L> SyntaxKindSet<L>
 where
@@ -49,7 +50,7 @@ where
     /// ```compile_fail
     /// # use biome_rowan::{SyntaxKindSet, RawSyntaxKind, raw_language::RawLanguage};
     /// const EXAMPLE: SyntaxKindSet<RawLanguage> =
-    ///     SyntaxKindSet::<RawLanguage>::from_raw(RawSyntaxKind(512));
+    ///     SyntaxKindSet::<RawLanguage>::from_raw(RawSyntaxKind(640));
     /// # println!("{EXAMPLE:?}"); // The constant must be used to be evaluated
     /// ```
     pub const fn from_raw(kind: RawSyntaxKind) -> Self {
@@ -59,7 +60,7 @@ where
         let shift = kind % u128::BITS as u16;
         let mask = 1 << shift;
 
-        let mut bits = [0; 4];
+        let mut bits = [0; 5];
         bits[index] = mask;
 
         Self(bits, PhantomData)
@@ -73,6 +74,7 @@ where
                 self.0[1] | other.0[1],
                 self.0[2] | other.0[2],
                 self.0[3] | other.0[3],
+                self.0[4] | other.0[4],
             ],
             PhantomData,
         )
@@ -272,6 +274,15 @@ pub trait AstNode: Clone {
         I::IntoIter: ExactSizeIterator,
     {
         Self::cast(self.into_syntax().append_trivia_pieces(trivia)?)
+    }
+
+    /// Returns a new version of this node with *all* trivia stripped.
+    fn trim_comments_and_trivia(self) -> Option<Self> {
+        Self::cast(
+            self.into_syntax()
+                .with_leading_trivia_pieces([])?
+                .with_trailing_trivia_pieces([])?,
+        )
     }
 
     /// Return a new version of this node without leading and trailing newlines and whitespaces.
@@ -681,6 +692,19 @@ impl<L: Language, N: AstNode<Language = L>> Iterator for AstSeparatedListElement
             trailing_separator: separator,
         })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.slots.len();
+        // Each element typically consumes 2 slots (node + separator),
+        // but the last element may have only 1 slot (node without trailing separator)
+        let len = len.div_ceil(2);
+        (len, Some(len))
+    }
+}
+
+impl<L: Language, N: AstNode<Language = L>> ExactSizeIterator
+    for AstSeparatedListElementsIterator<L, N>
+{
 }
 
 impl<L: Language, N: AstNode<Language = L>> FusedIterator
@@ -734,6 +758,15 @@ impl<L: Language, N: AstNode<Language = L>> Iterator for AstSeparatedListNodesIt
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|element| element.node)
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<L: Language, N: AstNode<Language = L>> ExactSizeIterator
+    for AstSeparatedListNodesIterator<L, N>
+{
 }
 
 impl<L: Language, N: AstNode<Language = L>> FusedIterator for AstSeparatedListNodesIterator<L, N> {}
@@ -773,6 +806,144 @@ impl Display for SyntaxError {
 }
 
 impl Error for SyntaxError {}
+
+/// A "pointer" to a [`SyntaxNode`], via location in the source code.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct SyntaxNodePtr<L: Language> {
+    kind: L::Kind,
+    range: TextRange,
+}
+
+impl<L: Language> SyntaxNodePtr<L> {
+    /// Returns a [`SyntaxNodePtr`] for the node.
+    pub fn new(node: &SyntaxNode<L>) -> Self {
+        Self {
+            kind: node.kind(),
+            range: node.text_range_with_trivia(),
+        }
+    }
+
+    /// Like [`Self::try_to_node`] but panics instead of returning `None` on
+    /// failure.
+    pub fn to_node(&self, root: &SyntaxNode<L>) -> SyntaxNode<L> {
+        self.try_to_node(root)
+            .unwrap_or_else(|| panic!("can't resolve {self:?} with {root:?}"))
+    }
+
+    /// "Dereferences" the pointer to get the [`SyntaxNode`] it points to.
+    ///
+    /// Returns `None` if the node is not found, so make sure that the `root`
+    /// syntax tree is equivalent to (i.e. is build from the same text from) the
+    /// tree which was originally used to get this [`SyntaxNodePtr`].
+    ///
+    /// Also returns `None` if `root` is not actually a root (i.e. it has a
+    /// parent).
+    ///
+    /// The complexity is linear in the depth of the tree and logarithmic in
+    /// tree width. As most trees are shallow, thinking about this as
+    /// `O(log(N))` in the size of the tree is not too wrong!
+    pub fn try_to_node(&self, root: &SyntaxNode<L>) -> Option<SyntaxNode<L>> {
+        if root.parent().is_some() {
+            return None;
+        }
+        successors(Some(root.clone()), |node| {
+            node.child_or_token_at_range(self.range)?.into_node()
+        })
+        .find(|it| it.text_range_with_trivia() == self.range && it.kind() == self.kind)
+    }
+
+    /// Casts this to an [`AstPtr`] to the given node type if possible.
+    pub fn cast<N: AstNode<Language = L>>(self) -> Option<AstPtr<N>> {
+        if !N::can_cast(self.kind) {
+            return None;
+        }
+        Some(AstPtr { raw: self })
+    }
+
+    /// Returns the kind of the syntax node this points to.
+    pub fn kind(&self) -> L::Kind {
+        self.kind
+    }
+
+    /// Returns the range of the syntax node this points to.
+    pub fn text_range(&self) -> TextRange {
+        self.range
+    }
+}
+
+/// Like [`SyntaxNodePtr`], but remembers the type of node.
+pub struct AstPtr<N: AstNode> {
+    raw: SyntaxNodePtr<N::Language>,
+}
+
+impl<N: AstNode> AstPtr<N> {
+    /// Returns an [`AstPtr`] for the node.
+    pub fn new(node: &N) -> Self {
+        Self {
+            raw: SyntaxNodePtr::new(node.syntax()),
+        }
+    }
+
+    /// Like `Self::try_to_node` but panics on failure.
+    pub fn to_node(&self, root: &SyntaxNode<N::Language>) -> N {
+        self.try_to_node(root)
+            .unwrap_or_else(|| panic!("can't resolve {self:?} with {root:?}"))
+    }
+
+    /// Given the root node containing the node `n` that `self` is a pointer to,
+    /// returns `n` if possible. See [`SyntaxNodePtr::try_to_node`].
+    pub fn try_to_node(&self, root: &SyntaxNode<N::Language>) -> Option<N> {
+        N::cast(self.raw.try_to_node(root)?)
+    }
+
+    /// Returns the underlying [`SyntaxNodePtr`].
+    pub fn syntax_node_ptr(&self) -> SyntaxNodePtr<N::Language> {
+        self.raw
+    }
+
+    /// Casts this to an [`AstPtr`] to the given node type if possible.
+    pub fn cast<U: AstNode<Language = N::Language>>(self) -> Option<AstPtr<U>> {
+        if !U::can_cast(self.raw.kind) {
+            return None;
+        }
+        Some(AstPtr { raw: self.raw })
+    }
+}
+
+impl<N: AstNode> fmt::Debug for AstPtr<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AstPtr").field("raw", &self.raw).finish()
+    }
+}
+
+impl<N: AstNode> Clone for AstPtr<N> {
+    fn clone(&self) -> Self {
+        Self { raw: self.raw }
+    }
+}
+
+impl<N: AstNode> PartialEq for AstPtr<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
+}
+
+impl<N: AstNode> Eq for AstPtr<N> {}
+
+impl<N: AstNode> Hash for AstPtr<N>
+where
+    <N::Language as Language>::Kind: std::hash::Hash,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.raw.hash(state)
+    }
+}
+
+impl<N: AstNode> From<AstPtr<N>> for SyntaxNodePtr<N::Language> {
+    fn from(ptr: AstPtr<N>) -> Self {
+        ptr.raw
+    }
+}
 
 pub mod support {
     use super::{AstNode, SyntaxNode, SyntaxToken};
@@ -866,7 +1037,9 @@ mod tests {
         LiteralExpression, RawLanguage, RawLanguageKind, RawSyntaxTreeBuilder,
         SeparatedExpressionList,
     };
-    use crate::{AstNode, AstSeparatedElement, AstSeparatedList, SyntaxResult};
+    use crate::{AstNode, AstPtr, AstSeparatedElement, AstSeparatedList, SyntaxResult};
+
+    use super::SyntaxNodePtr;
 
     /// Creates a ast separated list over a sequence of numbers separated by ",".
     /// The elements are pairs of: (value, separator).
@@ -1190,5 +1363,38 @@ mod tests {
                 todo!()
             }
         }
+    }
+
+    #[test]
+    fn syntax_ptr_roundtrip() {
+        // list(1, 2, 3, 4,)
+        let list = build_list(vec![
+            (Some(1), Some(",")),
+            (Some(2), Some(",")),
+            (Some(3), Some(",")),
+            (Some(4), Some(",")),
+        ]);
+
+        let third = list.iter().nth(2).unwrap().unwrap();
+        let third_ptr = SyntaxNodePtr::new(third.syntax());
+        assert_eq!(
+            *third.syntax(),
+            third_ptr.to_node(list.syntax_list().node())
+        );
+    }
+
+    #[test]
+    fn ast_ptr_roundtrip() {
+        // list(1, 2, 3, 4,)
+        let list = build_list(vec![
+            (Some(1), Some(",")),
+            (Some(2), Some(",")),
+            (Some(3), Some(",")),
+            (Some(4), Some(",")),
+        ]);
+
+        let third = list.iter().nth(2).unwrap().unwrap();
+        let third_ptr = AstPtr::new(&third);
+        assert_eq!(third, third_ptr.to_node(list.syntax_list().node()));
     }
 }

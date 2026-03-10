@@ -14,7 +14,7 @@ const SUPPRESS_WITH_REASON: &str =
 
 #[test]
 fn ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -31,7 +31,7 @@ fn ok() {
 
 #[test]
 fn err_when_both_write_and_suppress_are_passed() {
-    let mut fs = MemoryFileSystem::new_read_only();
+    let fs = MemoryFileSystem::new_read_only();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("check.js");
@@ -55,7 +55,7 @@ fn err_when_both_write_and_suppress_are_passed() {
 
 #[test]
 fn suppress_ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -88,7 +88,7 @@ fn suppress_ok() {
 
 #[test]
 fn suppress_multiple_ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -124,7 +124,7 @@ fn suppress_multiple_ok() {
 
 #[test]
 fn suppress_only_ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -165,7 +165,7 @@ fn suppress_only_ok() {
 
 #[test]
 fn suppress_skip_ok() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -206,7 +206,7 @@ fn suppress_skip_ok() {
 
 #[test]
 fn err_when_only_reason() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -239,7 +239,7 @@ fn err_when_only_reason() {
 
 #[test]
 fn custom_explanation_with_reason() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("fix.js");
@@ -280,7 +280,7 @@ fn custom_explanation_with_reason() {
 
 #[test]
 fn unused_suppression_after_top_level() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("file.js");
@@ -317,7 +317,7 @@ let bar = 33;",
 
 #[test]
 fn misplaced_top_level_suppression() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("file.js");
@@ -352,7 +352,7 @@ let bar = 33;",
 
 #[test]
 fn unused_range_suppression() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("file.js");
@@ -386,7 +386,7 @@ a == b;
 
 #[test]
 fn syntax_rule_line_suppression() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("file.ts");
@@ -424,7 +424,7 @@ function sommething(chalk: ChalkInstance) {
 
 #[test]
 fn syntax_rule_range_suppression() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("file.ts");
@@ -459,8 +459,39 @@ function sommething(chalk: ChalkInstance) {
 }
 
 #[test]
+fn syntax_rule_range_suppression_category_only() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let file_path = Utf8Path::new("file.ts");
+    fs.insert(
+        file_path.into(),
+        *b"
+// biome-ignore-start lint: explanation
+const foo = 1;
+// biome-ignore-end lint: explanation",
+    );
+
+    let (fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(["lint", file_path.as_str()].as_slice()),
+    );
+
+    assert!(result.is_ok(), "run_cli returned {result:?}");
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "syntax_rule_range_suppression_category_only",
+        fs,
+        console,
+        result,
+    ));
+}
+
+#[test]
 fn syntax_rule_top_suppression() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("file.ts");
@@ -495,7 +526,7 @@ function sommething(chalk: ChalkInstance) {
 
 #[test]
 fn err_when_missing_range_end() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("file.ts");
@@ -530,7 +561,7 @@ function sommething(chalk: ChalkInstance) {
 
 #[test]
 fn should_emit_diagnostics_for_incorrect_reason() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let file_path = Utf8Path::new("file.ts");

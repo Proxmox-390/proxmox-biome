@@ -17,14 +17,23 @@ body:
     attributes:
       label: Environment information
       description: Run the command `biome rage --formatter` and paste its output here. Please review it, in case there are sensitive information you don't want to share.
-      render: bash
+      value: |
+        <details>
+        
+        ```bash
+
+        Paste output here
+        
+        ```
+        
+        </details>
     validations:
       required: true
   - type: textarea
     id: configuration
     attributes:
       label: Configuration
-      description: Share the contents of you `biome.json` file
+      description: Share the contents of your `biome.json` file
       render: JSON
       placeholder: |
         {
@@ -40,7 +49,7 @@ body:
     attributes:
       label: Playground link
       description: |
-        Provide a detailed list of steps that reproduce the issue
+        Provide a detailed list of steps that reproduce the issue.
         The more information and included steps, the quicker your report can be triaged and addressed!
 
         You can also use the [playground](https://biomejs.dev/playground/) to share code snippets.

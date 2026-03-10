@@ -2,6 +2,7 @@
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: json/json5-as-json-with-trailing-commas/nested-quotes.json
 ---
+
 # Input
 
 ```json
@@ -190,26 +191,6 @@ nested-quotes.json:7:17 parse ━━━━━━━━━━━━━━━━�
     9 │       "number\"": "212 555-1234"},
   
   i Use an array for a sequence of values: `[1, 2]`
-  
-nested-quotes.json:12:3 parse ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  × Expected an array, an object, or a literal but instead found ']'.
-  
-    10 │     {"type": "office",
-    11 │       "trailing": "commas by accident"},
-  > 12 │   ],
-       │   ^
-    13 │ }
-    14 │ 
-  
-  i Expected an array, an object, or a literal here.
-  
-    10 │     {"type": "office",
-    11 │       "trailing": "commas by accident"},
-  > 12 │   ],
-       │   ^
-    13 │ }
-    14 │ 
   
 nested-quotes.json:7:19 parse ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

@@ -8,6 +8,7 @@ use biome_js_syntax::{
     JsTemplateExpression,
 };
 use biome_rowan::{AstNode, TextRange};
+use biome_rule_options::no_done_callback::NoDoneCallbackOptions;
 
 declare_lint_rule! {
     /// Disallow using a callback in asynchronous tests and hooks.
@@ -61,7 +62,7 @@ impl Rule for NoDoneCallback {
     type Query = Ast<JsCallExpression>;
     type State = TextRange;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoDoneCallbackOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
@@ -77,12 +78,23 @@ impl Rule for NoDoneCallback {
         }
 
         let arguments = &node.arguments().ok()?;
-        let callee_name = callee.get_callee_object_name()?;
+        let callee_object_name = callee.get_callee_object_name()?;
 
-        let argument_index = match callee_name.text_trimmed() {
-            "after" | "afterAll" | "afterEach" | "before" | "beforeAll" | "beforeEach" => 0,
-            "it" | "test" => 1, // for test.each() and test() we want the second argument
-            _ => return None,
+        let argument_index = if [
+            "after",
+            "afterAll",
+            "afterEach",
+            "before",
+            "beforeAll",
+            "beforeEach",
+        ]
+        .contains(&callee.to_trimmed_text().as_ref())
+        {
+            0
+        } else if ["it", "test"].contains(&callee_object_name.text_trimmed()) {
+            1 // for test.each() and test() we want the second argument
+        } else {
+            return None;
         };
         let argument = arguments
             .get_arguments_by_index([argument_index])

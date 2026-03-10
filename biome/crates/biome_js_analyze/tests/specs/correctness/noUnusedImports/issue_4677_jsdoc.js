@@ -9,6 +9,7 @@ import TypeOnGlobalVariable from "mod";
 import TypeOnFunctionVariable from "mod";
 import TypeOnTypeDef from "mod";
 import TypeOnExportedFunction from "mod";
+import TypeOnObjectProperty from "mod";
 
 /**
  * @typedef {TypeOnTypeDef} TestTypeOnTypeDef 
@@ -59,4 +60,9 @@ function testTypeOnFunctionVariable() {
 	let testTypeOnFunctionVariable;
 }
 
-
+const testTypeOnObjectProperty = {
+	/**
+	 * @type {TypeOnObjectProperty}
+	 */
+	property: 0,
+};

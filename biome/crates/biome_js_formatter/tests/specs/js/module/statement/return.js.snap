@@ -2,6 +2,7 @@
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: js/module/statement/return.js
 ---
+
 # Input
 
 ```js
@@ -14,7 +15,7 @@ function f2() {
 }
 
 function f3() {
-    return /* commment */'1'
+    return /* comment */'1'
 }
 
 function f4() {
@@ -55,6 +56,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```js
@@ -67,7 +70,7 @@ function f2() {
 }
 
 function f3() {
-	return /* commment */ "1";
+	return /* comment */ "1";
 }
 
 function f4() {
@@ -84,4 +87,5 @@ function f5() {
 		 */ "1"
 	);
 }
+
 ```

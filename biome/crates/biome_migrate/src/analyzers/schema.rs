@@ -29,7 +29,7 @@ impl Rule for Schema {
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let node = ctx.query();
 
-        let node_text = node.name().ok()?.inner_string_text().ok()?;
+        let node_text = node.name().ok()?.inner_string_text()?.ok()?;
         let member_value = node.value().ok()?;
         if node_text.text() == "$schema" {
             let string_value = member_value.as_json_string_value()?;
@@ -39,10 +39,10 @@ impl Rule for Schema {
                 .strip_prefix("https://biomejs.dev/schemas/")?
                 .strip_suffix("/schema.json");
 
-            if let Some(current_version) = value {
-                if current_version != BIOME_VERSION {
-                    return Some(string_value.range());
-                }
+            if let Some(current_version) = value
+                && current_version != BIOME_VERSION
+            {
+                return Some(string_value.range());
             }
         }
 

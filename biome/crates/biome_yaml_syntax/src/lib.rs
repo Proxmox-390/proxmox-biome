@@ -8,6 +8,7 @@ mod syntax_node;
 pub use self::generated::*;
 use biome_rowan::{AstNode, RawSyntaxKind};
 pub use biome_rowan::{TextLen, TextRange, TextSize, TokenAtOffset, TriviaPieceKind, WalkEvent};
+pub use file_source::YamlFileSource;
 pub use syntax_node::*;
 
 impl From<u16> for YamlSyntaxKind {
@@ -30,7 +31,11 @@ impl biome_rowan::SyntaxKind for YamlSyntaxKind {
     fn is_bogus(&self) -> bool {
         matches!(
             self,
-            Self::YAML_BOGUS | Self::YAML_BOGUS_BLOCK_NODE | Self::YAML_BOGUS_BLOCK_MAP_ENTRY
+            Self::YAML_BOGUS
+                | Self::YAML_BOGUS_BLOCK_NODE
+                | Self::YAML_BOGUS_BLOCK_MAP_ENTRY
+                | Self::YAML_BOGUS_BLOCK_HEADER
+                | Self::YAML_BOGUS_FLOW_NODE
         )
     }
 
@@ -38,6 +43,8 @@ impl biome_rowan::SyntaxKind for YamlSyntaxKind {
         match self {
             kind if AnyYamlBlockMapEntry::can_cast(*kind) => Self::YAML_BOGUS_BLOCK_MAP_ENTRY,
             kind if AnyYamlBlockNode::can_cast(*kind) => Self::YAML_BOGUS_BLOCK_NODE,
+            kind if AnyYamlBlockHeader::can_cast(*kind) => Self::YAML_BOGUS_BLOCK_HEADER,
+            kind if AnyYamlFlowNode::can_cast(*kind) => Self::YAML_BOGUS_FLOW_NODE,
             _ => Self::YAML_BOGUS,
         }
     }
@@ -69,16 +76,6 @@ impl biome_rowan::SyntaxKind for YamlSyntaxKind {
     }
 }
 
-impl YamlSyntaxKind {
-    pub fn is_trivia(self) -> bool {
-        matches!(self, Self::WHITESPACE)
-    }
-
-    pub fn is_comments(self) -> bool {
-        matches!(self, Self::COMMENT)
-    }
-}
-
 impl TryFrom<YamlSyntaxKind> for TriviaPieceKind {
     type Error = ();
 
@@ -86,6 +83,7 @@ impl TryFrom<YamlSyntaxKind> for TriviaPieceKind {
         match value {
             YamlSyntaxKind::WHITESPACE => Ok(Self::Whitespace),
             YamlSyntaxKind::COMMENT => Ok(Self::SingleLineComment),
+            YamlSyntaxKind::NEWLINE => Ok(Self::Newline),
             _ => Err(()),
         }
     }

@@ -364,6 +364,17 @@ impl SemanticEventExtractor {
                 );
             }
 
+            JS_EXPRESSION_TEMPLATE_ROOT => {
+                self.push_scope(
+                    node.text_trimmed_range(),
+                    ScopeHoisting::DontHoistDeclarationsToParent,
+                    ScopeOptions {
+                        is_closure: false,
+                        implies_strict_mode: false,
+                    },
+                );
+            }
+
             JS_DIRECTIVE => {
                 if JsDirective::unwrap_cast(node.clone())
                     .inner_string_text()
@@ -461,6 +472,7 @@ impl SemanticEventExtractor {
             | TS_DECLARE_FUNCTION_DECLARATION
             | TS_DECLARE_FUNCTION_EXPORT_DEFAULT_DECLARATION
             | TS_CALL_SIGNATURE_TYPE_MEMBER
+            | TS_CONSTRUCT_SIGNATURE_TYPE_MEMBER
             | TS_METHOD_SIGNATURE_CLASS_MEMBER
             | TS_METHOD_SIGNATURE_TYPE_MEMBER
             | TS_INDEX_SIGNATURE_CLASS_MEMBER
@@ -546,10 +558,9 @@ impl SemanticEventExtractor {
                     | AnyJsBindingDeclaration::JsObjectBindingPatternShorthandProperty(_) => {
                         if let Some(AnyJsBindingDeclaration::JsVariableDeclarator(declarator)) =
                             declaration.parent_binding_pattern_declaration()
+                            && declarator.declaration().is_some_and(|x| x.is_var())
                         {
-                            if declarator.declaration().is_some_and(|x| x.is_var()) {
-                                hoisted_scope_id = self.scope_index_to_hoist_declarations(0)
-                            }
+                            hoisted_scope_id = self.scope_index_to_hoist_declarations(0)
                         }
                         self.push_binding(hoisted_scope_id, BindingName::Value(name), info);
                     }
@@ -649,6 +660,7 @@ impl SemanticEventExtractor {
                             .and_then(|clause| clause.type_token());
                         if type_token.is_none() {
                             self.push_binding(None, BindingName::Value(name.clone()), info.clone());
+                            self.push_binding(None, BindingName::Type(name.clone()), info.clone());
                         } else {
                             self.push_binding(None, BindingName::Type(name), info);
                         }
@@ -840,6 +852,7 @@ impl SemanticEventExtractor {
             }
             JS_MODULE
             | JS_SCRIPT
+            | JS_EXPRESSION_TEMPLATE_ROOT
             | TS_DECLARATION_MODULE
             | JS_FUNCTION_DECLARATION
             | JS_FUNCTION_EXPORT_DEFAULT_DECLARATION
@@ -866,6 +879,7 @@ impl SemanticEventExtractor {
             | TS_DECLARE_FUNCTION_DECLARATION
             | TS_DECLARE_FUNCTION_EXPORT_DEFAULT_DECLARATION
             | TS_CALL_SIGNATURE_TYPE_MEMBER
+            | TS_CONSTRUCT_SIGNATURE_TYPE_MEMBER
             | TS_METHOD_SIGNATURE_CLASS_MEMBER
             | TS_METHOD_SIGNATURE_TYPE_MEMBER
             | TS_INDEX_SIGNATURE_CLASS_MEMBER
@@ -1013,7 +1027,6 @@ impl SemanticEventExtractor {
                                     is_read: !reference.is_write(),
                                     range: reference.range(),
                                 });
-                                continue;
                             }
                             // Handle edge case where a parameter has the same name that a parameter type name
                             // For example `(stream: stream.T) => {}`

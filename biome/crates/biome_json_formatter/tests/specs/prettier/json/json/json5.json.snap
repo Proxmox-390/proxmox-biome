@@ -2,6 +2,7 @@
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: json/json/json5.json
 ---
+
 # Input
 
 ```json
@@ -241,26 +242,6 @@ json5.json:7:5 parse ━━━━━━━━━━━━━━━━━━━�
     8 │   ],
     9 │   Infinity: NaN,
   
-json5.json:8:3 parse ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  × Expected an array, an object, or a literal but instead found ']'.
-  
-     6 │     -Infinity,
-     7 │     NaN,
-   > 8 │   ],
-       │   ^
-     9 │   Infinity: NaN,
-    10 │   NaN: Infinity,
-  
-  i Expected an array, an object, or a literal here.
-  
-     6 │     -Infinity,
-     7 │     NaN,
-   > 8 │   ],
-       │   ^
-     9 │   Infinity: NaN,
-    10 │   NaN: Infinity,
-  
 json5.json:9:3 parse ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   × String values must be double quoted.
@@ -346,7 +327,7 @@ json5.json:11:8 parse ━━━━━━━━━━━━━━━━━━━�
   
 json5.json:12:1 parse ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  × Expected an array, an object, or a literal but instead found '}'.
+  × expected `]` but instead found `}`
   
     10 │   NaN: Infinity,
     11 │   NaN: -Infinity,
@@ -355,14 +336,7 @@ json5.json:12:1 parse ━━━━━━━━━━━━━━━━━━━�
     13 │ {
     14 │   '//': 'JSON5 numbers',
   
-  i Expected an array, an object, or a literal here.
-  
-    10 │   NaN: Infinity,
-    11 │   NaN: -Infinity,
-  > 12 │ },
-       │ ^
-    13 │ {
-    14 │   '//': 'JSON5 numbers',
+  i Remove }
   
 json5.json:13:1 parse ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

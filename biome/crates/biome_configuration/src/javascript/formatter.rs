@@ -2,10 +2,11 @@ use crate::bool::Bool;
 use biome_deserialize_macros::{Deserializable, Merge};
 use biome_formatter::{
     AttributePosition, BracketSameLine, BracketSpacing, Expand, IndentStyle, IndentWidth,
-    LineEnding, LineWidth, QuoteStyle,
+    LineEnding, LineWidth, QuoteStyle, TrailingNewline,
 };
 use biome_js_formatter::context::{
-    ArrowParentheses, QuoteProperties, Semicolons, trailing_commas::TrailingCommas,
+    ArrowParentheses, OperatorLinebreak, QuoteProperties, Semicolons,
+    trailing_commas::TrailingCommas,
 };
 use bpaf::Bpaf;
 use serde::{Deserialize, Serialize};
@@ -73,10 +74,10 @@ pub struct JsFormatterConfiguration {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indent_width: Option<IndentWidth>,
 
-    /// The type of line ending applied to JavaScript (and its super languages) files.
+    /// The type of line ending applied to JavaScript (and its super languages) files. `auto` uses CRLF on Windows and LF on other platforms.
     #[bpaf(
         long("javascript-formatter-line-ending"),
-        argument("lf|crlf|cr"),
+        argument("lf|crlf|cr|auto"),
         optional
     )]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -116,6 +117,28 @@ pub struct JsFormatterConfiguration {
     #[bpaf(long("javascript-formatter-expand"), argument("auto|always|never"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expand: Option<Expand>,
+
+    /// When breaking binary expressions into multiple lines, whether to break them before or after the binary operator. Defaults to "after".
+    #[bpaf(
+        long("javascript-formatter-operator-linebreak"),
+        argument("before|after")
+    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operator_linebreak: Option<OperatorLinebreak>,
+
+    /// Whether to add a trailing newline at the end of the file.
+    ///
+    /// Setting this option to `false` is **highly discouraged** because it could cause many problems with other tools:
+    /// - https://thoughtbot.com/blog/no-newline-at-end-of-file
+    /// - https://callmeryan.medium.com/no-newline-at-end-of-file-navigating-gits-warning-for-android-developers-af14e73dd804
+    /// - https://unix.stackexchange.com/questions/345548/how-to-cat-files-together-adding-missing-newlines-at-end-of-some-files
+    ///
+    /// Disable the option at your own risk.
+    ///
+    /// Defaults to true.
+    #[bpaf(long("javascript-formatter-trailing-newline"), argument("true|false"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trailing_newline: Option<TrailingNewline>,
 }
 
 impl JsFormatterConfiguration {
@@ -153,5 +176,9 @@ impl JsFormatterConfiguration {
 
     pub fn expand_resolved(&self) -> Expand {
         self.expand.unwrap_or_default()
+    }
+
+    pub fn operator_linebreak_resolved(&self) -> OperatorLinebreak {
+        self.operator_linebreak.unwrap_or_default()
     }
 }

@@ -1,14 +1,15 @@
 use crate::run_cli;
+use crate::run_cli_with_dyn_fs;
 use crate::snap_test::{SnapshotPayload, assert_cli_snapshot};
 use biome_console::BufferConsole;
 use biome_formatter::LineWidth;
-use biome_fs::MemoryFileSystem;
+use biome_fs::{MemoryFileSystem, TemporaryFs};
 use bpaf::Args;
 use camino::Utf8Path;
 
 #[test]
 fn extends_config_ok_formatter_no_linter() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let biome_json = Utf8Path::new("biome.json");
@@ -46,7 +47,7 @@ fn extends_config_ok_formatter_no_linter() {
 
 #[test]
 fn extends_config_ok_from_npm_package() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let biome_json = Utf8Path::new("biome.json");
@@ -106,7 +107,7 @@ fn extends_config_ok_from_npm_package() {
 // See: https://github.com/biomejs/biome/issues/6217
 #[test]
 fn extends_config_ok_from_npm_package_with_author_field() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let biome_json = Utf8Path::new("biome.json");
@@ -166,7 +167,7 @@ fn extends_config_ok_from_npm_package_with_author_field() {
 
 #[test]
 fn extends_config_ok_from_npm_package_with_condition_names() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let biome_json = Utf8Path::new("biome.json");
@@ -202,7 +203,7 @@ fn extends_config_ok_from_npm_package_with_condition_names() {
     "exports": {
         "./biome": {
             "default": "./biome.jsonc"
-        } 
+        }
     }
 }"#,
     );
@@ -229,7 +230,7 @@ fn extends_config_ok_from_npm_package_with_condition_names() {
 
 #[test]
 fn extends_config_ok_linter_not_formatter() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let biome_json = Utf8Path::new("biome.json");
@@ -276,7 +277,7 @@ fn extends_config_ok_linter_not_formatter() {
 
 #[test]
 fn extends_should_raise_an_error_for_unresolved_configuration() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let biome_json = Utf8Path::new("biome.json");
@@ -314,7 +315,7 @@ fn extends_should_raise_an_error_for_unresolved_configuration() {
 
 #[test]
 fn extends_should_raise_an_error_for_unresolved_configuration_and_show_verbose() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let biome_json = Utf8Path::new("biome.json");
@@ -352,7 +353,7 @@ fn extends_should_raise_an_error_for_unresolved_configuration_and_show_verbose()
 
 #[test]
 fn extends_resolves_when_using_config_path() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let biome_json = Utf8Path::new("config/biome.json");
@@ -390,7 +391,7 @@ fn extends_resolves_when_using_config_path() {
 
 #[test]
 fn applies_extended_values_in_current_config() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let format = Utf8Path::new("format.json");
@@ -430,7 +431,7 @@ fn applies_extended_values_in_current_config() {
 
 #[test]
 fn respects_unaffected_values_from_extended_config() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let format = Utf8Path::new("format.json");
@@ -467,7 +468,7 @@ fn respects_unaffected_values_from_extended_config() {
 
 #[test]
 fn allows_reverting_fields_in_extended_config_to_default() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let format = Utf8Path::new("format.json");
@@ -507,7 +508,7 @@ fn allows_reverting_fields_in_extended_config_to_default() {
 
 #[test]
 fn extends_config_merge_overrides() {
-    let mut fs = MemoryFileSystem::default();
+    let fs = MemoryFileSystem::default();
     let mut console = BufferConsole::default();
 
     let shared = Utf8Path::new("shared.json");
@@ -546,6 +547,275 @@ fn extends_config_merge_overrides() {
         module_path!(),
         "extends_config_merge_overrides",
         fs,
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn extends_config_rule_fix_options_merge() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let shared = Utf8Path::new("shared.json");
+    fs.insert(
+        shared.into(),
+        r#"{
+            "linter": {
+                "enabled": true,
+                "rules": {
+                    "correctness": {
+                        "noUnusedVariables": {
+                            "level": "on",
+                            "options": {
+                                "ignoreRestSiblings": false
+                            }
+                        }
+                    }
+                }
+            }
+        }"#,
+    );
+
+    let biome_json = Utf8Path::new("biome.json");
+    fs.insert(
+        biome_json.into(),
+        r#"{
+            "extends": ["shared.json"],
+            "linter": {
+                "enabled": true,
+                "rules": {
+                    "correctness": {
+                        "noUnusedVariables": {
+                            "level": "on",
+                            "fix": "safe"
+                        }
+                    }
+                }
+            }
+        }"#,
+    );
+
+    let test_file = Utf8Path::new("test.js");
+    fs.insert(
+        test_file.into(),
+        "const { a, ...rest } = { a: 1, b: 2}; export { rest }",
+    );
+
+    let (fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(["lint", test_file.as_str()].as_slice()),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "extends_config_rule_fix_options_merge",
+        fs,
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn extends_config_rule_fine_grained_options_merge() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let shared = Utf8Path::new("shared.json");
+    fs.insert(
+        shared.into(),
+        r#"{
+            "linter": {
+                "enabled": true,
+                "rules": {
+                    "style": {
+                        "useNamingConvention": {
+                        "level": "on",
+                            "options": {
+                                "strictCase": false,
+                                "conventions": [{
+                                    "selector": { "kind": "variable", "scope": "global" },
+                                    "formats": ["PascalCase"]
+                                }]
+                            }
+                        }
+                    }
+                }
+            }
+        }"#,
+    );
+
+    let biome_json = Utf8Path::new("biome.json");
+    fs.insert(
+        biome_json.into(),
+        r#"{
+            "extends": ["shared.json"],
+            "linter": {
+                "enabled": true,
+                "rules": {
+                    "style": {
+                        "useNamingConvention": {
+                            "level": "on",
+                            "options": {
+                                "strictCase": true
+                            }
+                        }
+                    }
+                }
+            }
+        }"#,
+    );
+
+    let test_file = Utf8Path::new("test.js");
+    fs.insert(
+        test_file.into(),
+        "export const lowercase = 0; export const PascalCASE = 1;",
+    );
+
+    let (fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(["lint", test_file.as_str()].as_slice()),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "extends_config_rule_fine_grained_options_merge",
+        fs,
+        console,
+        result,
+    ));
+}
+
+#[test]
+fn extends_config_rule_fine_grained_options_merge2() {
+    let fs = MemoryFileSystem::default();
+    let mut console = BufferConsole::default();
+
+    let shared = Utf8Path::new("shared.json");
+    fs.insert(
+        shared.into(),
+        r#"{
+            "linter": {
+                "enabled": true,
+                "rules": {
+                    "style": {
+                        "useNamingConvention": {
+                        "level": "on",
+                            "options": {
+                                "conventions": [{
+                                    "selector": { "kind": "variable", "scope": "global" },
+                                    "formats": ["PascalCase"]
+                                }]
+                            }
+                        }
+                    }
+                }
+            }
+        }"#,
+    );
+
+    let biome_json = Utf8Path::new("biome.json");
+    fs.insert(
+        biome_json.into(),
+        r#"{
+            "extends": ["shared.json"],
+            "linter": {
+                "enabled": true,
+                "rules": {
+                    "style": {
+                        "useNamingConvention": {
+                            "level": "on",
+                            "options": {
+                                "conventions": [{
+                                    "selector": { "kind": "variable", "scope": "global" },
+                                    "formats": ["CONSTANT_CASE"]
+                                }]
+                            }
+                        }
+                    }
+                }
+            }
+        }"#,
+    );
+
+    let test_file = Utf8Path::new("test.js");
+    fs.insert(test_file.into(), "export const PascalCase = 0;");
+
+    let (fs, result) = run_cli(
+        fs,
+        &mut console,
+        Args::from(["lint", test_file.as_str()].as_slice()),
+    );
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "extends_config_rule_fine_grained_options_merge2",
+        fs,
+        console,
+        result,
+    ));
+}
+
+// See: https://github.com/biomejs/biome/issues/7343
+#[test]
+fn extends_config_two_levels_deep() {
+    let mut console = BufferConsole::default();
+    let mut fs = TemporaryFs::new("extends_config_two_levels_deep");
+
+    // Root config at the project root
+    fs.create_file(
+        "biome.jsonc",
+        r#"{
+    "formatter": {
+        "lineWidth": 120
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "suspicious": {
+                "noDebugger": "error"
+            }
+        }
+    }
+}"#,
+    );
+
+    // Child config two levels deep: sub-project/sub-sub-project/biome.jsonc
+    // It extends the root config using a relative path ../../biome.jsonc
+    fs.create_file(
+        "sub-project/sub-sub-project/biome.jsonc",
+        r#"{
+    "extends": ["../../biome.jsonc"],
+    "root": false
+}"#,
+    );
+
+    // Test file in the same directory as child config
+    fs.create_file(
+        "sub-project/sub-sub-project/test.js",
+        r#"debugger; console.log("string"); "#,
+    );
+
+    let result = run_cli_with_dyn_fs(
+        Box::new(fs.create_os()),
+        &mut console,
+        Args::from(
+            [
+                "check",
+                &format!("{}/sub-project/sub-sub-project/test.js", fs.cli_path()),
+            ]
+            .as_slice(),
+        ),
+    );
+
+    assert!(result.is_err(), "run_cli returned {result:?}");
+
+    assert_cli_snapshot(SnapshotPayload::new(
+        module_path!(),
+        "extends_config_two_levels_deep",
+        fs.create_mem(),
         console,
         result,
     ));

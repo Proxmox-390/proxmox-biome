@@ -31,8 +31,6 @@ pub enum FileKinds {
     Manifest,
     /// An ignore file, like `.gitignore`
     Ignore,
-    /// The path is a directory
-    Directory,
     /// A file to handle has the lowest priority. It's usually a traversed file, or a file opened by the LSP
     #[default]
     Handleable,
@@ -54,11 +52,7 @@ pub struct BiomePath {
 impl BiomePath {
     pub fn new(path_to_file: impl Into<Utf8PathBuf>) -> Self {
         let path = path_to_file.into();
-        let kind = if path.is_dir() {
-            FileKinds::Directory
-        } else {
-            path.file_name().map(Self::priority).unwrap_or_default()
-        };
+        let kind = path.file_name().map(Self::priority).unwrap_or_default();
         Self {
             path,
             kind,
@@ -113,14 +107,14 @@ impl BiomePath {
 
     /// The priority of the file.
     /// - `biome.json` and `biome.jsonc` have the highest priority
-    /// - `package.json` and `tsconfig.json`/`jsconfig.json` have the second-highest priority, and they are considered as manifest files
+    /// - `package.json`, `tsconfig.json`/`jsconfig.json`, and `turbo.json` have the second-highest priority, and they are considered as manifest files
     /// - Other files are considered as files to handle
     fn priority(file_name: &str) -> FileKinds {
         if file_name == ConfigName::biome_json() || file_name == ConfigName::biome_jsonc() {
             FileKinds::Config
         } else if matches!(
             file_name,
-            "package.json" | "tsconfig.json" | "jsconfig.json"
+            "package.json" | "tsconfig.json" | "jsconfig.json" | "turbo.json" | "turbo.jsonc"
         ) {
             FileKinds::Manifest
         } else if matches!(file_name, ".gitignore" | ".ignore") {
@@ -146,11 +140,6 @@ impl BiomePath {
     }
 
     #[inline(always)]
-    pub fn is_dir(&self) -> bool {
-        matches!(self.kind, FileKinds::Directory)
-    }
-
-    #[inline(always)]
     pub fn is_handleable(&self) -> bool {
         matches!(self.kind, FileKinds::Handleable)
     }
@@ -166,10 +155,11 @@ impl BiomePath {
     }
 
     /// Returns `true` if the path is inside `node_modules`
+    #[inline(always)]
     pub fn is_dependency(&self) -> bool {
         self.path
             .components()
-            .any(|component| component.as_str() == "node_modules")
+            .any(|component| component.as_str().as_bytes() == b"node_modules")
     }
 
     /// Whether this is a file named `package.json`
@@ -221,6 +211,18 @@ impl Deref for BiomePath {
     }
 }
 
+impl AsRef<Utf8PathBuf> for BiomePath {
+    fn as_ref(&self) -> &Utf8PathBuf {
+        &self.path
+    }
+}
+
+impl AsRef<Utf8Path> for BiomePath {
+    fn as_ref(&self) -> &Utf8Path {
+        self.path.as_ref()
+    }
+}
+
 #[cfg(feature = "serde")]
 impl serde::Serialize for BiomePath {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -253,11 +255,11 @@ impl<'de> serde::Deserialize<'de> for BiomePath {
 
 #[cfg(feature = "schema")]
 impl schemars::JsonSchema for BiomePath {
-    fn schema_name() -> String {
-        "BiomePath".to_string()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("BiomePath")
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         String::json_schema(generator)
     }
 }
@@ -296,6 +298,8 @@ mod test {
         let biome_path = BiomePath::new(path);
         assert_eq!(biome_path.file_name(), Some("package.json"));
         assert_eq!(BiomePath::priority("package.json"), FileKinds::Manifest);
+        assert_eq!(BiomePath::priority("turbo.json"), FileKinds::Manifest);
+        assert_eq!(BiomePath::priority("turbo.jsonc"), FileKinds::Manifest);
         assert_eq!(BiomePath::priority("biome.json"), FileKinds::Config);
         assert_eq!(BiomePath::priority("biome.jsonc"), FileKinds::Config);
         assert_eq!(BiomePath::priority(".gitignore"), FileKinds::Ignore);
@@ -338,7 +342,7 @@ mod test {
         let path6 = BiomePath::new(Utf8PathBuf::from("src/frontend/biome.jsonc"));
         let path7 = BiomePath::new(Utf8PathBuf::from("src/frontend/package.json"));
 
-        let mut paths = vec![path1, path2, path3, path4, path5, path6, path7];
+        let mut paths = [path1, path2, path3, path4, path5, path6, path7];
         paths.sort();
         let mut iter = paths.iter();
         assert_eq!(iter.next().unwrap().to_string(), "src/biome.json");

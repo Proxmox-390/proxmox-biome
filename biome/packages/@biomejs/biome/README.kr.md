@@ -29,7 +29,7 @@
      For example given below is the same order as these files appear on page:
      https://github.com/biomejs/biome/tree/main/packages/@biomejs/biome -->
 
-  [हिन्दी](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.hi.md) | [English](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.md) | [Français](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.fr.md) | [繁體中文](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.zh-TW.md) | [简体中文](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.zh-CN.md) | [日本語](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.ja.md) | [Português do Brasil](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.pt-BR.md) | 한국어 | [Русский](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.ru.md) | [Українська](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.uk.md)
+  [हिन्दी](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.hi.md) | [English](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.md) | [Español](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.es.md) | [Français](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.fr.md) | [繁體中文](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.zh-TW.md) | [简体中文](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.zh-CN.md) | [日本語](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.ja.md) | [Polski](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.pl.md) | [Português do Brasil](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.pt-BR.md) | 한국어 | [Русский](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.ru.md) | [Українська](https://github.com/biomejs/biome/blob/main/packages/%40biomejs/biome/README.uk.md)
 </div>
 
 <br>
@@ -38,7 +38,7 @@
 
 **Biome**은 _JavaScript_, _TypeScript_, _JSX_, _JSON_, _CSS_ 및 *GraphQL*을 위한 **[고속 포매터](https://github.com/biomejs/biome/tree/main/benchmark#formatting)로**, **[*Prettier*와 97%의 호환성](https://console.algora.io/challenges/prettier)을** 자랑합니다.
 
-**Biome**은 _JavaScript_, _TypeScript_, _JSX_, _CSS_ 및 *GraphQL*을 위한 **[고성능 린터](https://github.com/biomejs/biome/tree/main/benchmark#linting)로**, ESLint, typescript-eslint 등 [다양한 소스](https://github.com/biomejs/biome/discussions/3)에서 가져온 **[270개 이상의 규칙](https://biomejs.dev/linter/rules/)을** 제공합니다. **맥락을 고려한 상세한 진단 정보**를 제공하여 코드 품질 향상과 개발 실력 향상에 도움을 줍니다!
+**Biome**은 _JavaScript_, _TypeScript_, _JSX_, _CSS_ 및 *GraphQL*을 위한 **[고성능 린터](https://github.com/biomejs/biome/tree/main/benchmark#linting)로**, ESLint, typescript-eslint 등 [다양한 소스](https://github.com/biomejs/biome/discussions/3)에서 가져온 **[340개 이상의 규칙](https://biomejs.dev/linter/javascript/rules/)을** 제공합니다. **맥락을 고려한 상세한 진단 정보**를 제공하여 코드 품질 향상과 개발 실력 향상에 도움을 줍니다!
 
 **Biome**은 처음부터 [에디터와 상호작용](https://biomejs.dev/guides/editors/first-party-extensions/)하도록 설계되었습니다. 코드를 작성하는 동안에도 포매팅과 린팅을 수행할 수 있습니다.
 
@@ -109,29 +109,11 @@ Biome은 기업이 다양한 개발자들 사이에서 인지도를 얻을 수 �
   <tbody>
     <tr>
       <td align="center" valign="middle">
-        <a href="https://vercel.com/?utm_source=biome&utm_medium=readme" target="_blank">
-          <picture>
-            <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/biomejs/resources/refs/heads/main/sponsors/vercel-dark.png" />
-            <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/biomejs/resources/refs/heads/main/sponsors/vercel-light.png" />
-            <img src="https://raw.githubusercontent.com/biomejs/resources/refs/heads/main/sponsors/vercel-light.png" width="500" alt="Vercel" />
-          </picture>
-        </a>
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-### Gold Sponsors
-
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="middle">
         <a href="https://depot.dev/?utm_source=biome&utm_medium=readme" target="_blank">
           <picture>
             <source media="(prefers-color-scheme: light)" srcset="https://depot.dev/assets/brand/1693758816/depot-logo-horizontal-on-light@3x.png" />
             <source media="(prefers-color-scheme: dark)" srcset="https://depot.dev/assets/brand/1693758816/depot-logo-horizontal-on-dark@3x.png" />
-            <img src="https://depot.dev/assets/brand/1693758816/depot-logo-horizontal-on-light@3x.png" width="400" alt="Depot" />
+            <img src="https://depot.dev/assets/brand/1693758816/depot-logo-horizontal-on-light@3x.png" width="600" alt="Depot" />
           </picture>
         </a>
       </td>
@@ -148,9 +130,6 @@ Biome은 기업이 다양한 개발자들 사이에서 인지도를 얻을 수 �
         <a href="https://l2beat.com/?utm_source=biome&utm_medium=readme" target="_blank"><img src="https://images.opencollective.com/l2beat/c2b2a27/logo/256.png" height="100" alt="L2BEAT logo"></a>
       </td>
       <td align="center" valign="middle">
-        <a href="https://www.phoenixlabs.dev/?utm_source=biome&utm_medium=readme" target="_blank"><img src="https://images.opencollective.com/phoenix-labs/2824ed4/logo/100.png?height=100" height="100" alt="Phoenix Labs logo"></a>
-      </td>
-      <td align="center" valign="middle">
         <a href="https://lokalise.com/?utm_source=biome&utm_medium=readme" target="_blank"><img src="https://avatars.githubusercontent.com/u/14294501?s=200&v=4" height="100" alt="Lokalise logo"></a>
       </td>
     </tr>
@@ -162,9 +141,6 @@ Biome은 기업이 다양한 개발자들 사이에서 인지도를 얻을 수 �
 <table>
   <tbody>
     <tr>
-      <td align="center" valign="middle">
-        <a href="https://nanabit.dev/?utm_source=biome&utm_medium=readme" target="_blank"><img src="https://images.opencollective.com/nanabit/d15fd98/logo/256.png?height=80" width="80" alt="Nanabit logo"></a>
-      </td>
       <td align="center" valign="middle">
         <a href="https://vital.io/?utm_source=biome&utm_medium=readme" target="_blank"><img src="https://avatars.githubusercontent.com/u/25357309?s=200" width="80" alt="Vital logo"></a>
       </td>
@@ -182,6 +158,18 @@ Biome은 기업이 다양한 개발자들 사이에서 인지도를 얻을 수 �
       </td>
       <td align="center" valign="middle">
         <a href="https://jetbrains.com/?utm_source=biome&utm_medium=readme" target="_blank"><img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.png" width="100" alt="JetBrains logo"></a>
+      </td>
+      <td align="center" valign="middle">
+        <a href="https://www.egstock.co.jp/?utm_source=biome&utm_medium=readme" target="_blank"><img src="https://images.opencollective.com/egstock/b18c836/logo/256.png?height=256" width="80" alt="EGSTOCK, Inc. logo"></a>
+      </td>
+      <td align="center" valign="middle">
+        <a href="https://www.convex.dev/?utm_source=biome&utm_medium=readme" target="_blank"><img src="https://avatars.githubusercontent.com/u/81530787?s=200&v=4" width="80" alt="Convex logo"></a>
+      </td>
+      <td align="center" valign="middle">
+        <a href="https://graphite.dev/?utm_source=biome&utm_medium=readme" target="_blank"><img src="https://avatars.githubusercontent.com/u/61942612?s=200&v=4" width="80" alt="Graphite logo"></a>
+      </td>
+      <td align="center" valign="middle">
+        <a href="https://kraken.tech/?utm_source=biome&utm_medium=readme" target="_blank"><img src="https://avatars.githubusercontent.com/u/105941848?s=200&v=4" width="80" alt="Kraken Tech logo"></a>
       </td>
     </tr>
   </tbody>

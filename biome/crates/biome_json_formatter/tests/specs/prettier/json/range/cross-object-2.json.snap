@@ -72,26 +72,6 @@ cross-object-2.json:3:5 parse ━━━━━━━━━━━━━━━━�
     4 │ c: {d:     6}
     5 │ }
   
-cross-object-2.json:3:11 parse ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  × Expected a property but instead found '}'.
-  
-    1 │ {a:
-    2 │ { "b": 2, "c": 3,
-  > 3 │ d: {d:4}, },
-      │           ^
-    4 │ c: {d:     6}
-    5 │ }
-  
-  i Expected a property here.
-  
-    1 │ {a:
-    2 │ { "b": 2, "c": 3,
-  > 3 │ d: {d:4}, },
-      │           ^
-    4 │ c: {d:     6}
-    5 │ }
-  
 cross-object-2.json:4:1 parse ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   × Property key must be double quoted
@@ -116,5 +96,3 @@ cross-object-2.json:4:5 parse ━━━━━━━━━━━━━━━━�
   
 
 ```
-
-

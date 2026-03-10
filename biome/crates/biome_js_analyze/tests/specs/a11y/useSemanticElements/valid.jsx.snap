@@ -32,4 +32,23 @@ export const Component2 = () => (
     <div role="alert"></div>
     <div role="alertdialog"></div>
 </>;
+
+<>
+    <div role="combobox"></div>
+    <div role="listbox"></div>
+    <div role="option"></div>
+</>
+
+<>
+	<Div role="combobox"></Div>
+	<custom-element role="combobox"></custom-element>
+	<Card
+		role="button"
+	>
+		{children}
+	</Card>
+</>
+
 ```
+
+_Note: The parser emitted 4 diagnostics which are not shown here._

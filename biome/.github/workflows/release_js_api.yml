@@ -6,14 +6,14 @@ on:
 jobs:
   check:
     name: Check version
-    runs-on: depot-ubuntu-24.04-arm-16
+    runs-on: depot-ubuntu-24.04-arm-small
     outputs:
       version: ${{ env.version }}
       prerelease: ${{ env.prerelease }}
       nightly: ${{ env.nightly }}
       version_changed: ${{ steps.version.outputs.changed }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Check nightly status
         id: nightly
@@ -21,7 +21,7 @@ jobs:
         run: echo "nightly=true" >> $GITHUB_ENV
 
       - name: Check version changes
-        uses: EndBug/version-check@36ff30f37c7deabe56a30caa043d127be658c425 # v2.1.5
+        uses: EndBug/version-check@5102328418c0130d66ca712d755c303e93368ce2 # v2.1.7
         if: env.nightly != 'true'
         id: version
         with:
@@ -52,24 +52,24 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:
-          node-version: 20
+          node-version: 24.13.1
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Cache pnpm modules
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.pnpm-store
           key: ${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-
-      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.2.0
 
       - name: Set release infos
         if: needs.check.outputs.prerelease == 'true'
@@ -96,7 +96,7 @@ jobs:
           pnpm --filter @biomejs/js-api run build
 
       - name: Upload JS API artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: js-api
           path: |
@@ -105,25 +105,25 @@ jobs:
 
   publish:
     name: Publish
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04 # Must be a GitHub hosted runner for provenance
     needs: build
     environment: npm-publish
     permissions:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Download package artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: js-api
           path: packages/@biomejs/js-api/dist
 
       - name: Install Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:
-          node-version: 20
+          node-version: 24.13.1
           registry-url: 'https://registry.npmjs.org'
 
       - name: Set release infos
@@ -131,21 +131,18 @@ jobs:
         run: node packages/@biomejs/js-api/scripts/update-nightly-version.mjs
 
       - name: Publish npm package as latest
-        run: npm publish packages/@biomejs/js-api --tag latest --access public --provenance
+        run: npm publish packages/@biomejs/js-api --tag latest --access public
         if: needs.build.outputs.prerelease != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish npm package as nightly
-        run: npm publish packages/@biomejs/js-api --tag nightly --access public --provenance
+        run: npm publish packages/@biomejs/js-api --tag nightly --access public
         if: needs.build.outputs.prerelease == 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Extract changelog
         run: |
           bash scripts/print-changelog.sh ${{ needs.build.outputs.version }} >| ${{ github.workspace }}/RELEASE_NOTES
       - name: Create GitHub release and tag
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

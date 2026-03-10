@@ -10,9 +10,14 @@ use biome_service::{
     workspace::DocumentFileSource,
 };
 
-#[derive(Default)]
 pub struct CssTestFormatLanguage {
-    _source_type: CssFileSource,
+    source_type: CssFileSource,
+}
+
+impl CssTestFormatLanguage {
+    pub fn new(source_type: CssFileSource) -> Self {
+        Self { source_type }
+    }
 }
 
 impl TestFormatLanguage for CssTestFormatLanguage {
@@ -23,9 +28,10 @@ impl TestFormatLanguage for CssTestFormatLanguage {
     fn parse(&self, text: &str) -> AnyParse {
         let options = CssParserOptions::default()
             .allow_wrong_line_comments()
-            .allow_css_modules();
+            .allow_css_modules()
+            .allow_tailwind_directives();
 
-        parse_css(text, options).into()
+        parse_css(text, self.source_type, options).into()
     }
 
     fn to_format_language(
@@ -35,9 +41,9 @@ impl TestFormatLanguage for CssTestFormatLanguage {
     ) -> Self::FormatLanguage {
         let language_settings = &settings.languages.css.formatter;
         let options = Self::ServiceLanguage::resolve_format_options(
-            Some(&settings.formatter),
-            Some(&settings.override_settings),
-            Some(language_settings),
+            &settings.formatter,
+            &settings.override_settings,
+            language_settings,
             &BiomePath::new(""),
             file_source,
         );

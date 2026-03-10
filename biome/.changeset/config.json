@@ -23,8 +23,10 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
-    "@biomejs/benchmark",
     "@biomejs/aria-data",
-    "tailwindcss-config-analyzer"
+    "@biomejs/benchmark",
+    "@biomejs/plugin-api",
+    "tailwindcss-config-analyzer",
+    "@biomejs/prettier-compare"
   ]
 }

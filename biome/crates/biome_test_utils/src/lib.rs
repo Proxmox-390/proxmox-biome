@@ -1,24 +1,30 @@
 #![deny(clippy::use_self)]
 
+mod bench_case;
+
+pub use bench_case::BenchCase;
 use biome_analyze::options::{JsxRuntime, PreferredQuote};
 use biome_analyze::{AnalyzerAction, AnalyzerConfiguration, AnalyzerOptions};
-use biome_configuration::Configuration;
+use biome_configuration::{Configuration, ConfigurationPathHint};
 use biome_console::fmt::{Formatter, Termcolor};
 use biome_console::markup;
+use biome_css_parser::CssParserOptions;
+use biome_css_syntax::AnyCssRoot;
 use biome_diagnostics::termcolor::Buffer;
 use biome_diagnostics::{DiagnosticExt, Error, PrintDiagnostic};
 use biome_fs::{BiomePath, FileSystem, OsFileSystem};
-use biome_js_parser::{AnyJsRoot, JsFileSource, JsParserOptions};
-use biome_js_type_info::TypeResolver;
-use biome_json_parser::{JsonParserOptions, ParseDiagnostic};
+use biome_js_parser::{AnyJsRoot, JsParserOptions};
+use biome_js_type_info::{TypeData, TypeResolver};
+use biome_json_parser::ParseDiagnostic;
 use biome_module_graph::ModuleGraph;
-use biome_package::PackageJson;
+use biome_package::{Manifest, PackageJson, TsConfigJson, TurboJson};
 use biome_project_layout::ProjectLayout;
 use biome_rowan::{Direction, Language, SyntaxKind, SyntaxNode, SyntaxSlot};
-use biome_service::configuration::to_analyzer_rules;
+use biome_service::WorkspaceError;
+use biome_service::configuration::{LoadedConfiguration, load_configuration};
 use biome_service::file_handlers::DocumentFileSource;
 use biome_service::projects::Projects;
-use biome_service::settings::{ServiceLanguage, Settings, WorkspaceSettingsHandle};
+use biome_service::settings::{ServiceLanguage, Settings, SettingsHandle};
 use biome_string_case::StrLikeExtension;
 use camino::{Utf8Path, Utf8PathBuf};
 use json_comments::StripComments;
@@ -26,10 +32,6 @@ use similar::{DiffableStr, TextDiff};
 use std::ffi::c_int;
 use std::fmt::Write;
 use std::sync::{Arc, Once};
-
-mod bench_case;
-
-pub use bench_case::BenchCase;
 
 pub fn scripts_from_json(extension: &str, input_code: &str) -> Option<Vec<String>> {
     if extension == "json" || extension == "jsonc" {
@@ -41,7 +43,7 @@ pub fn scripts_from_json(extension: &str, input_code: &str) -> Option<Vec<String
     }
 }
 
-pub fn create_analyzer_options(
+pub fn create_analyzer_options<L: ServiceLanguage>(
     input_file: &Utf8Path,
     diagnostics: &mut Vec<String>,
 ) -> AnalyzerOptions {
@@ -49,80 +51,135 @@ pub fn create_analyzer_options(
     // We allow a test file to configure its rule using a special
     // file with the same name as the test but with extension ".options.json"
     // that configures that specific rule.
-    let mut analyzer_configuration = AnalyzerConfiguration::default()
+    let analyzer_configuration = AnalyzerConfiguration::default()
         .with_preferred_quote(PreferredQuote::Double)
         .with_jsx_runtime(JsxRuntime::Transparent);
-    let options_file = input_file.with_extension("options.json");
-    let Ok(json) = std::fs::read_to_string(options_file.clone()) else {
+    let Ok((source, loaded_configuration)) = load_configuration_for_test_file(input_file) else {
         return options.with_configuration(analyzer_configuration);
     };
-    let deserialized = biome_deserialize::json::deserialize_from_json_str::<Configuration>(
-        json.as_str(),
-        JsonParserOptions::default(),
-        "",
-    );
-    if deserialized.has_errors() {
+    if loaded_configuration.has_errors() {
+        let configuration_path = loaded_configuration.file_path.unwrap().clone();
         diagnostics.extend(
-            deserialized
-                .into_diagnostics()
+            loaded_configuration
+                .diagnostics
                 .into_iter()
                 .map(|diagnostic| {
-                    diagnostic_to_string(options_file.file_stem().unwrap(), &json, diagnostic)
+                    diagnostic_to_string(
+                        configuration_path.file_stem().unwrap(),
+                        source.as_str(),
+                        diagnostic,
+                    )
                 })
                 .collect::<Vec<_>>(),
         );
+
+        options.with_configuration(analyzer_configuration)
     } else {
-        let configuration = deserialized.into_deserialized().unwrap_or_default();
         let mut settings = Settings::default();
-        analyzer_configuration = analyzer_configuration.with_preferred_quote(
-            configuration
-                .javascript
-                .as_ref()
-                .and_then(|js| js.formatter.as_ref())
-                .and_then(|f| {
-                    f.quote_style.map(|quote_style| {
-                        if quote_style.is_double() {
-                            PreferredQuote::Double
-                        } else {
-                            PreferredQuote::Single
-                        }
-                    })
-                })
-                .unwrap_or_default(),
-        );
-
-        use biome_configuration::javascript::JsxRuntime::*;
-        analyzer_configuration = analyzer_configuration.with_jsx_runtime(
-            match configuration
-                .javascript
-                .as_ref()
-                .and_then(|js| js.jsx_runtime)
-                .unwrap_or_default()
-            {
-                ReactClassic => JsxRuntime::ReactClassic,
-                Transparent => JsxRuntime::Transparent,
-            },
-        );
-        analyzer_configuration = analyzer_configuration.with_globals(
-            configuration
-                .javascript
-                .as_ref()
-                .and_then(|js| {
-                    js.globals
-                        .as_ref()
-                        .map(|globals| globals.iter().cloned().collect())
-                })
-                .unwrap_or_default(),
-        );
-
         settings
-            .merge_with_configuration(configuration, None)
+            .merge_with_configuration(
+                loaded_configuration.configuration,
+                None,
+                loaded_configuration.extended_configurations,
+            )
             .unwrap();
 
-        analyzer_configuration =
-            analyzer_configuration.with_rules(to_analyzer_rules(&settings, input_file));
+        L::resolve_analyzer_options(
+            &settings,
+            &L::lookup_settings(&settings.languages).linter,
+            L::resolve_environment(&settings),
+            &BiomePath::new(input_file),
+            &DocumentFileSource::from_path(
+                input_file,
+                settings.experimental_full_html_support_enabled(),
+            ),
+            None,
+        )
     }
-    options.with_configuration(analyzer_configuration)
+}
+
+pub fn load_configuration_source(
+    input_file: &Utf8Path,
+) -> Option<(Configuration, Vec<(Utf8PathBuf, Configuration)>)> {
+    let fs = OsFileSystem::new(input_file.parent().unwrap().to_path_buf());
+    let source = fs.read_file_from_path(input_file).ok()?;
+
+    let path_hint = ConfigurationPathHint::FromUser(input_file.to_path_buf());
+    let (_, loaded_configuration) = load_configuration(&fs, path_hint)
+        .map(|configuration| (source, configuration))
+        .ok()?;
+
+    let LoadedConfiguration {
+        configuration,
+        extended_configurations,
+        ..
+    } = loaded_configuration;
+
+    Some((configuration, extended_configurations))
+}
+
+/// It loads `<input_file>.options.json`
+pub fn load_configuration_for_test_file(
+    input_file: &Utf8Path,
+) -> Result<(String, LoadedConfiguration), WorkspaceError> {
+    let fs = OsFileSystem::new(input_file.parent().unwrap().to_path_buf());
+    let options_file = input_file.with_extension("options.json");
+    let source = fs.read_file_from_path(&options_file);
+    match source {
+        Ok(source) => {
+            let path_hint = ConfigurationPathHint::FromUser(options_file);
+            load_configuration(&fs, path_hint).map(|configuration| (source, configuration))
+        }
+        Err(err) => Err(err.into()),
+    }
+}
+
+pub fn create_parser_options<L: ServiceLanguage>(
+    input_file: &Utf8Path,
+    diagnostics: &mut Vec<String>,
+) -> Option<L::ParserOptions> {
+    let Ok((source, loaded_configuration)) = load_configuration_for_test_file(input_file) else {
+        return None;
+    };
+
+    let projects = Projects::default();
+    let key = projects.insert_project(Utf8PathBuf::from(""));
+
+    if loaded_configuration.has_errors() {
+        let configuration_path = loaded_configuration.file_path.unwrap().clone();
+        diagnostics.extend(
+            loaded_configuration
+                .diagnostics
+                .into_iter()
+                .map(|diagnostic| {
+                    diagnostic_to_string(
+                        configuration_path.file_stem().unwrap(),
+                        &source,
+                        diagnostic,
+                    )
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        Default::default()
+    } else {
+        let configuration = loaded_configuration.configuration;
+        let mut settings = projects.get_root_settings(key).unwrap_or_default();
+        settings
+            .merge_with_configuration(
+                configuration,
+                None,
+                loaded_configuration.extended_configurations,
+            )
+            .unwrap();
+
+        let document_file_source = DocumentFileSource::from_path(
+            input_file,
+            settings.experimental_full_html_support_enabled(),
+        );
+        let handle = SettingsHandle::new(&settings, None);
+        Some(handle.parse_options::<L>(&input_file.into(), &document_file_source))
+    }
 }
 
 pub fn create_formatting_options<L>(
@@ -135,36 +192,42 @@ where
     let projects = Projects::default();
     let key = projects.insert_project(Utf8PathBuf::from(""));
 
-    let options_file = input_file.with_extension("options.json");
-    let Ok(json) = std::fs::read_to_string(options_file.clone()) else {
+    let Ok((source, loaded_configuration)) = load_configuration_for_test_file(input_file) else {
         return Default::default();
     };
-    let deserialized = biome_deserialize::json::deserialize_from_json_str::<Configuration>(
-        json.as_str(),
-        JsonParserOptions::default(),
-        "",
-    );
-    if deserialized.has_errors() {
+    if loaded_configuration.has_errors() {
+        let configuration_path = loaded_configuration.file_path.unwrap().clone();
         diagnostics.extend(
-            deserialized
-                .into_diagnostics()
+            loaded_configuration
+                .diagnostics
                 .into_iter()
                 .map(|diagnostic| {
-                    diagnostic_to_string(options_file.file_stem().unwrap(), &json, diagnostic)
+                    diagnostic_to_string(
+                        configuration_path.file_stem().unwrap(),
+                        &source,
+                        diagnostic,
+                    )
                 })
                 .collect::<Vec<_>>(),
         );
 
         Default::default()
     } else {
-        let configuration = deserialized.into_deserialized().unwrap_or_default();
+        let configuration = loaded_configuration.configuration;
         let mut settings = projects.get_root_settings(key).unwrap_or_default();
         settings
-            .merge_with_configuration(configuration, None)
+            .merge_with_configuration(
+                configuration,
+                None,
+                loaded_configuration.extended_configurations,
+            )
             .unwrap();
 
-        let handle = WorkspaceSettingsHandle::from(settings);
-        let document_file_source = DocumentFileSource::from_path(input_file);
+        let document_file_source = DocumentFileSource::from_path(
+            input_file,
+            settings.experimental_full_html_support_enabled(),
+        );
+        let handle = SettingsHandle::new(&settings, None);
         handle.format_options::<L>(&input_file.into(), &document_file_source)
     }
 }
@@ -186,31 +249,75 @@ pub fn module_graph_for_test_file(
     let dir = input_file.parent().unwrap().to_path_buf();
     let paths = get_js_like_paths_in_dir(&dir);
     let fs = OsFileSystem::new(dir);
-    let paths = get_added_paths(&fs, &paths);
+    let paths = get_added_js_paths(&fs, &paths);
 
-    module_graph.update_graph_for_js_paths(&fs, project_layout, &paths, &[]);
+    module_graph.update_graph_for_js_paths(&fs, project_layout, &paths, true);
 
     Arc::new(module_graph)
 }
 
 /// Loads and parses files from the file system to pass them to service methods.
-pub fn get_added_paths<'a>(
+pub fn get_added_js_paths<'a>(
     fs: &dyn FileSystem,
     paths: &'a [BiomePath],
-) -> Vec<(&'a BiomePath, AnyJsRoot)> {
+) -> Vec<(
+    &'a BiomePath,
+    AnyJsRoot,
+    std::sync::Arc<biome_js_semantic::SemanticModel>,
+)> {
     paths
         .iter()
         .filter_map(|path| {
+            let DocumentFileSource::Js(file_source) =
+                DocumentFileSource::from_path(path.as_path(), false)
+            else {
+                return None;
+            };
+
             let root = fs.read_file_from_path(path).ok().and_then(|content| {
-                let file_source = JsFileSource::try_from(path.as_path()).unwrap_or_default();
                 let parsed =
                     biome_js_parser::parse(&content, file_source, JsParserOptions::default());
                 let diagnostics = parsed.diagnostics();
                 assert!(
                     diagnostics.is_empty(),
-                    "Unexpected diagnostics: {diagnostics:?}"
+                    "Unexpected diagnostics: {diagnostics:?}\nWhile parsing:\n{content}"
                 );
                 parsed.try_tree()
+            })?;
+
+            // Build semantic model for the parsed root
+            let semantic_model = biome_js_semantic::semantic_model(
+                &root,
+                biome_js_semantic::SemanticModelOptions::default(),
+            );
+
+            Some((path, root, std::sync::Arc::new(semantic_model)))
+        })
+        .collect()
+}
+
+/// Loads and parses files from the file system to pass them to service methods.
+pub fn get_css_added_paths<'a>(
+    fs: &dyn FileSystem,
+    paths: &'a [BiomePath],
+) -> Vec<(&'a BiomePath, AnyCssRoot)> {
+    paths
+        .iter()
+        .filter_map(|path| {
+            let DocumentFileSource::Css(file_source) =
+                DocumentFileSource::from_path(path.as_path(), false)
+            else {
+                return None;
+            };
+            let root = fs.read_file_from_path(path).ok().map(|content| {
+                let parsed =
+                    biome_css_parser::parse_css(&content, file_source, CssParserOptions::default());
+                let diagnostics = parsed.diagnostics();
+                assert!(
+                    diagnostics.is_empty(),
+                    "Unexpected diagnostics: {diagnostics:?}\nWhile parsing:\n{content}"
+                );
+                parsed.tree()
             })?;
             Some((path, root))
         })
@@ -225,7 +332,7 @@ fn get_js_like_paths_in_dir(dir: &Utf8Path) -> Vec<BiomePath> {
             if path.is_dir() {
                 get_js_like_paths_in_dir(&path)
             } else {
-                DocumentFileSource::from_well_known(&path)
+                DocumentFileSource::from_well_known(&path, false)
                     .is_javascript_like()
                     .then(|| BiomePath::new(path))
                     .into_iter()
@@ -235,29 +342,30 @@ fn get_js_like_paths_in_dir(dir: &Utf8Path) -> Vec<BiomePath> {
         .collect()
 }
 
-pub fn project_layout_with_node_manifest(
+pub fn project_layout_for_test_file(
     input_file: &Utf8Path,
     diagnostics: &mut Vec<String>,
 ) -> Arc<ProjectLayout> {
-    let options_file = input_file.with_extension("package.json");
-    if let Ok(json) = std::fs::read_to_string(options_file.clone()) {
-        let deserialized = biome_deserialize::json::deserialize_from_json_str::<PackageJson>(
-            json.as_str(),
-            JsonParserOptions::default(),
-            "",
-        );
+    let project_layout = ProjectLayout::default();
+    let fs = OsFileSystem::new(input_file.parent().unwrap().to_path_buf());
+
+    let package_json_file = input_file.with_extension("package.json");
+    if let Ok(json) = std::fs::read_to_string(&package_json_file) {
+        let deserialized = PackageJson::read_manifest(&fs, &package_json_file);
         if deserialized.has_errors() {
             diagnostics.extend(
                 deserialized
                     .into_diagnostics()
                     .into_iter()
                     .map(|diagnostic| {
-                        diagnostic_to_string(options_file.file_stem().unwrap(), &json, diagnostic)
-                    })
-                    .collect::<Vec<_>>(),
+                        diagnostic_to_string(
+                            package_json_file.file_stem().unwrap(),
+                            &json,
+                            diagnostic,
+                        )
+                    }),
             );
         } else {
-            let project_layout = ProjectLayout::default();
             project_layout.insert_node_manifest(
                 input_file
                     .parent()
@@ -265,10 +373,68 @@ pub fn project_layout_with_node_manifest(
                     .unwrap_or_default(),
                 deserialized.into_deserialized().unwrap_or_default(),
             );
-            return Arc::new(project_layout);
         }
     }
-    Default::default()
+
+    let tsconfig_file = input_file.with_extension("tsconfig.json");
+    if let Ok(json) = std::fs::read_to_string(&tsconfig_file) {
+        let deserialized = TsConfigJson::read_manifest(&fs, &tsconfig_file);
+        if deserialized.has_errors() {
+            diagnostics.extend(
+                deserialized
+                    .into_diagnostics()
+                    .into_iter()
+                    .map(|diagnostic| {
+                        diagnostic_to_string(tsconfig_file.file_stem().unwrap(), &json, diagnostic)
+                    }),
+            );
+        } else {
+            project_layout.insert_tsconfig(
+                input_file
+                    .parent()
+                    .map(|dir_path| dir_path.to_path_buf())
+                    .unwrap_or_default(),
+                deserialized.into_deserialized().unwrap_or_default(),
+            );
+        }
+    }
+
+    // Try turbo.json first, then turbo.jsonc
+    let turbo_json_file = input_file.with_extension("turbo.json");
+    let turbo_jsonc_file = input_file.with_extension("turbo.jsonc");
+    let turbo_file = if turbo_json_file.exists() {
+        Some(turbo_json_file)
+    } else if turbo_jsonc_file.exists() {
+        Some(turbo_jsonc_file)
+    } else {
+        None
+    };
+
+    if let Some(turbo_file) = turbo_file
+        && let Ok(json) = std::fs::read_to_string(&turbo_file)
+    {
+        let deserialized = TurboJson::read_manifest(&fs, &turbo_file);
+        if deserialized.has_errors() {
+            diagnostics.extend(
+                deserialized
+                    .into_diagnostics()
+                    .into_iter()
+                    .map(|diagnostic| {
+                        diagnostic_to_string(turbo_file.file_stem().unwrap(), &json, diagnostic)
+                    }),
+            );
+        } else {
+            project_layout.insert_turbo_json(
+                input_file
+                    .parent()
+                    .map(|dir_path| dir_path.to_path_buf())
+                    .unwrap_or_default(),
+                deserialized.into_deserialized().unwrap_or_default(),
+            );
+        }
+    }
+
+    Arc::new(project_layout)
 }
 
 pub fn diagnostic_to_string(name: &str, source: &str, diag: Error) -> String {
@@ -307,6 +473,21 @@ pub fn dump_registered_types(content: &mut String, resolver: &dyn TypeResolver) 
         content.push_str(&registered_types);
         content.push_str("```\n");
     }
+}
+
+pub fn dump_registered_module_types(content: &mut String, types: &[&TypeData]) {
+    if types.is_empty() {
+        return;
+    }
+
+    content.push_str("## Registered types\n\n");
+    content.push_str("```");
+
+    for (i, ty) in types.iter().enumerate() {
+        content.push_str(&format!("\nModule TypeId({i}) => {ty}\n"));
+    }
+
+    content.push_str("```\n");
 }
 
 // Check that all red / green nodes have correctly been released on exit
@@ -427,12 +608,22 @@ pub fn write_analyzer_snapshot(
     diagnostics: &[String],
     code_fixes: &[String],
     markdown_language: &str,
+    parser_diagnostics: usize,
 ) {
     writeln!(snapshot, "# Input").unwrap();
     writeln!(snapshot, "```{markdown_language}").unwrap();
     writeln!(snapshot, "{input_code}").unwrap();
     writeln!(snapshot, "```").unwrap();
     writeln!(snapshot).unwrap();
+
+    if parser_diagnostics > 0 {
+        writeln!(
+            snapshot,
+            "_Note: The parser emitted {parser_diagnostics} diagnostics which are not shown here._"
+        )
+        .unwrap();
+        writeln!(snapshot).unwrap();
+    }
 
     if !diagnostics.is_empty() {
         writeln!(snapshot, "# Diagnostics").unwrap();
@@ -500,7 +691,8 @@ pub fn validate_eof_token<L: Language>(syntax: SyntaxNode<L>) {
     );
     assert!(
         last_token.token_text_trimmed().is_empty(),
-        "the EOF token may not contain any data except trailing whitespace"
+        "the EOF token may not contain any data except trailing whitespace, but found \"{}\"",
+        last_token.token_text_trimmed()
     );
 }
 
@@ -530,7 +722,7 @@ pub fn validate_eof_token<L: Language>(syntax: SyntaxNode<L>) {
 pub fn assert_diagnostics_expectation_comment<L: Language>(
     file_path: &Utf8Path,
     syntax: &SyntaxNode<L>,
-    diagnostics_quantity: usize,
+    diagnostics: Vec<String>,
 ) {
     let no_diagnostics_comment_text = "should not generate diagnostics";
     let diagnostics_comment_text = "should generate diagnostics";
@@ -568,26 +760,25 @@ pub fn assert_diagnostics_expectation_comment<L: Language>(
         None
     });
 
-    let has_diagnostics = diagnostics_quantity > 0;
+    let has_diagnostics = !diagnostics.is_empty();
     match diagnostic_comment {
         Some(Diagnostics::ShouldNotGenerateDiagnostics) => {
             if has_diagnostics {
                 panic!(
-                    "This test should not generate diagnostics\nFile: {}",
-                    file_path
+                    "This test should not generate diagnostics\nFile: {file_path}\n\nDiagnostics: {}",
+                    diagnostics.join("\n")
                 );
             }
         }
         Some(Diagnostics::ShouldGenerateDiagnostics) => {
             if !has_diagnostics {
-                panic!("This test should generate diagnostics\nFile: {}", file_path);
+                panic!("This test should generate diagnostics\nFile: {file_path}",);
             }
         }
         None => {
             if is_valid_test_file {
                 panic!(
-                    "Valid test files should contain comment `{}`\nFile: {}",
-                    no_diagnostics_comment_text, file_path
+                    "Valid test files should contain comment `{no_diagnostics_comment_text}`\nFile: {file_path}",
                 );
             }
         }

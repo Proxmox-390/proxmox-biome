@@ -2,6 +2,7 @@
 source: crates/biome_formatter_test/src/snapshot_builder.rs
 info: jsx/arrow_function.jsx
 ---
+
 # Input
 
 ```jsx
@@ -70,6 +71,8 @@ Bracket spacing: true
 Bracket same line: false
 Attribute Position: Auto
 Expand lists: Auto
+Operator linebreak: After
+Trailing newline: true
 -----
 
 ```jsx
@@ -113,4 +116,5 @@ function ArrowCurryWithDestructuringParameters() {
 	return ({ C }) =>
 		(props) => <C {...props} />;
 }
+
 ```

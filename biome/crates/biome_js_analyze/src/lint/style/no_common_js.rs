@@ -5,6 +5,7 @@ use biome_js_syntax::{
     JsCallExpression, JsReferenceIdentifier, JsStaticMemberAssignment, global_identifier,
 };
 use biome_rowan::{AstNode, declare_node_union};
+use biome_rule_options::no_common_js::NoCommonJsOptions;
 
 use crate::services::semantic::Semantic;
 
@@ -56,6 +57,7 @@ declare_lint_rule! {
         language: "js",
         sources: &[
             RuleSource::EslintTypeScript("no-require-imports").same(),
+            RuleSource::EslintTypeScript("no-var-requires").same(),
             RuleSource::EslintImport("no-commonjs").same(),
         ],
         recommended: false,
@@ -67,7 +69,7 @@ impl Rule for NoCommonJs {
     type Query = Semantic<CommonJsImportExport>;
     type State = bool;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = NoCommonJsOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let file_ext = ctx.file_path().extension();

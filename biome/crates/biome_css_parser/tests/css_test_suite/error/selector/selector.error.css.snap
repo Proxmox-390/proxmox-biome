@@ -2,6 +2,7 @@
 source: crates/biome_css_parser/tests/spec_test.rs
 expression: snapshot
 ---
+
 ## Input
 
 ```css
@@ -29,7 +30,7 @@ expression: snapshot
 ```
 CssRoot {
     bom_token: missing (optional),
-    rules: CssRuleList [
+    items: CssRootItemList [
         CssQualifiedRule {
             prelude: CssSelectorList [
                 CssComplexSelector {
@@ -440,14 +441,15 @@ CssRoot {
                 },
             ],
             block: CssBogusBlock {
-                items: [],
+                items: [
+                    CssDeclarationOrRuleList [
+                        CssEmptyDeclaration {
+                            semicolon_token: SEMICOLON@229..230 ";" [] [],
+                        },
+                    ],
+                    R_CURLY@230..232 "}" [Newline("\n")] [],
+                ],
             },
-        },
-        CssBogusRule {
-            items: [
-                SEMICOLON@229..230 ";" [] [],
-                R_CURLY@230..232 "}" [Newline("\n")] [],
-            ],
         },
     ],
     eof_token: EOF@232..233 "" [Newline("\n")] [],
@@ -459,7 +461,7 @@ CssRoot {
 ```
 0: CSS_ROOT@0..233
   0: (empty)
-  1: CSS_RULE_LIST@0..232
+  1: CSS_ROOT_ITEM_LIST@0..232
     0: CSS_QUALIFIED_RULE@0..20
       0: CSS_SELECTOR_LIST@0..18
         0: CSS_COMPLEX_SELECTOR@0..5
@@ -720,7 +722,7 @@ CssRoot {
       1: CSS_BOGUS_BLOCK@214..214
     10: CSS_BOGUS_RULE@214..216
       0: CSS_STRING_LITERAL@214..216 "\"\"" [] []
-    11: CSS_QUALIFIED_RULE@216..229
+    11: CSS_QUALIFIED_RULE@216..232
       0: CSS_SELECTOR_LIST@216..229
         0: CSS_COMPOUND_SELECTOR@216..229
           0: CSS_NESTED_SELECTOR_LIST@216..216
@@ -734,10 +736,11 @@ CssRoot {
               1: CSS_PSEUDO_CLASS_IDENTIFIER@226..229
                 0: CSS_IDENTIFIER@226..229
                   0: IDENT@226..229 "red" [] []
-      1: CSS_BOGUS_BLOCK@229..229
-    12: CSS_BOGUS_RULE@229..232
-      0: SEMICOLON@229..230 ";" [] []
-      1: R_CURLY@230..232 "}" [Newline("\n")] []
+      1: CSS_BOGUS_BLOCK@229..232
+        0: CSS_DECLARATION_OR_RULE_LIST@229..230
+          0: CSS_EMPTY_DECLARATION@229..230
+            0: SEMICOLON@229..230 ";" [] []
+        1: R_CURLY@230..232 "}" [Newline("\n")] []
   2: EOF@232..233 "" [Newline("\n")] []
 
 ```

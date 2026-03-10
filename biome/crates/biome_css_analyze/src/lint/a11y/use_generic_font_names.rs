@@ -1,18 +1,19 @@
+use crate::fonts::{
+    CssFontValue, find_font_family, is_font_family_keyword, is_system_family_name_keyword,
+};
+use crate::utils::is_css_variable;
 use biome_analyze::{
     Ast, Rule, RuleDiagnostic, RuleSource, context::RuleContext, declare_lint_rule,
 };
 use biome_console::markup;
 use biome_css_syntax::{
-    AnyCssAtRule, AnyCssGenericComponentValue, AnyCssValue, CssAtRule,
-    CssGenericComponentValueList, CssGenericProperty, CssSyntaxKind,
+    AnyCssAtRule, AnyCssGenericComponentValue, AnyCssGenericPropertyValueOrExpression, AnyCssValue,
+    CssAtRule, CssGenericComponentValueList, CssGenericProperty, CssSyntaxKind,
 };
 use biome_diagnostics::Severity;
 use biome_rowan::{AstNode, SyntaxNodeCast, TextRange};
+use biome_rule_options::use_generic_font_names::UseGenericFontNamesOptions;
 use biome_string_case::StrLikeExtension;
-
-use crate::utils::{
-    find_font_family, is_css_variable, is_font_family_keyword, is_system_family_name_keyword,
-};
 
 declare_lint_rule! {
     /// Disallow a missing generic family keyword within font families.
@@ -75,7 +76,7 @@ impl Rule for UseGenericFontNames {
     type Query = Ast<CssGenericProperty>;
     type State = TextRange;
     type Signals = Option<Self::State>;
-    type Options = ();
+    type Options = UseGenericFontNamesOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Option<Self::State> {
         let node = ctx.query();
@@ -84,6 +85,12 @@ impl Rule for UseGenericFontNames {
 
         // Ignore `@font-face`. See more detail: https://drafts.csswg.org/css-fonts/#font-face-rule
         if is_in_font_face_at_rule(node) {
+            return None;
+        }
+
+        // Ignore `@supports` feature declarations (the condition part).
+        // See issue: https://github.com/biomejs/biome/issues/8845
+        if is_in_supports_feature_declaration(node) {
             return None;
         }
 
@@ -96,8 +103,21 @@ impl Rule for UseGenericFontNames {
 
         // handle shorthand font property with special value
         // e.g: { font: caption }, { font: inherit }
-        let properties = node.value();
+        let properties = match node.value() {
+            Ok(value) => match value {
+                AnyCssGenericPropertyValueOrExpression::CssGenericComponentValueList(list) => list,
+                AnyCssGenericPropertyValueOrExpression::ScssExpression(_) => return None,
+            },
+            Err(_) => return None,
+        };
         if is_font && is_shorthand_font_property_with_keyword(&properties) {
+            return None;
+        }
+
+        // Check if the last value in the original properties is a CSS variable.
+        // This must be done before collect_font_family_properties/find_font_family
+        // which filter out functions.
+        if is_last_value_css_variable(&properties) {
             return None;
         }
 
@@ -111,16 +131,11 @@ impl Rule for UseGenericFontNames {
             return None;
         }
 
-        if has_generic_font_family_property(&font_families) {
+        if has_generic_font_family_property(font_families.as_slice()) {
             return None;
         }
 
-        // Ignore the last value if it's a CSS variable now.
         let last_value = font_families.last()?;
-        if is_css_variable(&last_value.to_trimmed_text()) {
-            return None;
-        }
-
         Some(last_value.range())
     }
 
@@ -149,10 +164,29 @@ impl Rule for UseGenericFontNames {
 fn is_in_font_face_at_rule(node: &CssGenericProperty) -> bool {
     node.syntax()
         .ancestors()
+        .skip(1)
         .find(|n| n.kind() == CssSyntaxKind::CSS_AT_RULE)
         .and_then(|n| n.cast::<CssAtRule>())
         .and_then(|n| n.rule().ok())
         .is_some_and(|n| matches!(n, AnyCssAtRule::CssFontFaceAtRule(_)))
+}
+
+/// Check if the node is inside a `@supports` feature declaration (the condition),
+/// not inside the declaration block of `@supports`.
+///
+/// ```css
+/// @supports (font: -apple-system-body) {
+///     a { font-family: Arial; }
+/// }
+/// ```
+///
+/// The `font: -apple-system-body` is inside the condition and should be ignored, but styles
+/// inside the `@supports { ... }` block should not.
+fn is_in_supports_feature_declaration(node: &CssGenericProperty) -> bool {
+    node.syntax()
+        .ancestors()
+        .skip(1)
+        .any(|n| n.kind() == CssSyntaxKind::CSS_SUPPORTS_FEATURE_DECLARATION)
 }
 
 fn is_shorthand_font_property_with_keyword(properties: &CssGenericComponentValueList) -> bool {
@@ -162,18 +196,44 @@ fn is_shorthand_font_property_with_keyword(properties: &CssGenericComponentValue
             .any(|p| is_system_family_name_keyword(&p.to_trimmed_text()))
 }
 
-fn has_generic_font_family_property(nodes: &[AnyCssValue]) -> bool {
-    nodes
-        .iter()
-        .any(|n| is_font_family_keyword(&n.to_trimmed_text()))
+fn has_generic_font_family_property(nodes: &[CssFontValue]) -> bool {
+    nodes.iter().any(|value| {
+        match value {
+            // Multiple values won't match font families keywords
+            CssFontValue::MultipleValue(_) => false,
+            CssFontValue::SingleValue(value) => {
+                let text = value.to_trimmed_text();
+                is_font_family_keyword(text.text())
+            }
+        }
+    })
 }
 
-fn collect_font_family_properties(properties: CssGenericComponentValueList) -> Vec<AnyCssValue> {
+fn collect_font_family_properties(properties: CssGenericComponentValueList) -> Vec<CssFontValue> {
     properties
         .into_iter()
         .filter_map(|v| match v {
-            AnyCssGenericComponentValue::AnyCssValue(value) => Some(value),
+            AnyCssGenericComponentValue::AnyCssValue(value) => match value {
+                AnyCssValue::CssIdentifier(node) => Some(CssFontValue::SingleValue(node.into())),
+                AnyCssValue::CssString(node) => Some(CssFontValue::SingleValue(node.into())),
+                _ => None,
+            },
             _ => None,
         })
         .collect()
+}
+
+/// Check if the last value in the properties list is a CSS variable.
+/// This handles cases like `font-family: "Noto Serif", var(--serif)`
+/// and `font: 1em "Noto Serif", var(--serif)`.
+fn is_last_value_css_variable(properties: &CssGenericComponentValueList) -> bool {
+    // Find the last non-delimiter value
+    properties
+        .into_iter()
+        .filter_map(|v| match v {
+            AnyCssGenericComponentValue::AnyCssValue(_) => Some(v),
+            AnyCssGenericComponentValue::CssGenericDelimiter(_) => None,
+        })
+        .last()
+        .is_some_and(|v| is_css_variable(&v.to_trimmed_text().text().to_ascii_lowercase_cow()))
 }

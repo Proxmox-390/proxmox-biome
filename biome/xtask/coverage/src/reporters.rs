@@ -251,7 +251,7 @@ impl SummaryReporter {
             let coverage = if summary.coverage.is_nan() {
                 "\u{221E}".to_string()
             } else {
-                format!("{:.2}", summary.coverage)
+                format!("{:.2}%", summary.coverage)
             };
 
             let total = panicked + errored + passed;
@@ -339,16 +339,16 @@ impl TestReporter for SummaryReporter {
             }
         }
 
-        if self.detail_level.is_debug() {
-            if let Some(files) = result.outcome.files() {
-                for file in files {
-                    let program = file.parse();
-                    self.writeln(&format!(
-                        "RAST Output for {}:\n{:#?}\n",
-                        &file.name().bold(),
-                        program.syntax()
-                    ));
-                }
+        if self.detail_level.is_debug()
+            && let Some(files) = result.outcome.files()
+        {
+            for file in files {
+                let program = file.parse();
+                self.writeln(&format!(
+                    "RAST Output for {}:\n{:#?}\n",
+                    &file.name().bold(),
+                    program.syntax()
+                ));
             }
         }
     }

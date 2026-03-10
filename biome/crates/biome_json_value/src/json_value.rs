@@ -21,7 +21,9 @@ use biome_deserialize::{
     json::unescape_json_string,
 };
 use biome_deserialize_macros::Deserializable;
-use biome_json_syntax::{AnyJsonValue, JsonArrayValue, JsonObjectValue, JsonStringValue};
+use biome_json_syntax::{
+    AnyJsonMemberName, AnyJsonValue, JsonArrayValue, JsonObjectValue, JsonStringValue,
+};
 use biome_rowan::TokenText;
 use indexmap::IndexMap;
 use rustc_hash::FxBuildHasher;
@@ -113,6 +115,7 @@ impl From<AnyJsonValue> for JsonValue {
                 Ok(value) => Self::Bool(value.text_trimmed() == "true"),
                 Err(_) => Self::Bogus,
             },
+            AnyJsonValue::JsonMetavariable(_) => Self::Bogus,
             AnyJsonValue::JsonNullValue(_) => Self::Null,
             AnyJsonValue::JsonNumberValue(number_value) => match number_value.value_token() {
                 Ok(value) => match value.text_trimmed().parse() {
@@ -213,6 +216,10 @@ impl From<JsonObjectValue> for JsonObject {
             .filter_map(|member| match member {
                 Ok(member) => {
                     let key = member.name().ok()?;
+                    let key = match key {
+                        AnyJsonMemberName::JsonMemberName(name) => name,
+                        _ => return None,
+                    };
                     let value = member.value().ok()?;
                     Some((key.inner_string_text().ok()?.into(), value.into()))
                 }
@@ -253,7 +260,7 @@ impl Borrow<str> for JsonString {
 
 impl From<&str> for JsonString {
     fn from(value: &str) -> Self {
-        Self(Text::Owned(value.to_string()))
+        Self(value.to_string().into())
     }
 }
 
@@ -261,24 +268,20 @@ impl From<JsonStringValue> for JsonString {
     fn from(value: JsonStringValue) -> Self {
         match value.inner_string_text() {
             Ok(text) => text.into(),
-            Err(_) => Self(Text::Owned(String::new())),
+            Err(_) => Self(Text::default()),
         }
     }
 }
 
 impl From<String> for JsonString {
     fn from(value: String) -> Self {
-        Self(Text::Owned(value))
+        Self(value.into())
     }
 }
 
 impl From<Text> for JsonString {
     fn from(text: Text) -> Self {
-        match text {
-            Text::Borrowed(token_text) => token_text.into(),
-            Text::Owned(string) => Self(Text::Owned(string)),
-            Text::Static(string) => Self(Text::Static(string)),
-        }
+        Self(text)
     }
 }
 

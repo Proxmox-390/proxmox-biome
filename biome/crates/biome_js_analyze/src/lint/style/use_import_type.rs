@@ -1,6 +1,7 @@
 use crate::{
     JsRuleAction,
-    react::{ReactLibrary, is_global_react_import},
+    react::{ReactLibrary, is_global_react_import, is_jsx_factory_import},
+    services::embedded_value_references::EmbeddedValueReferences,
     services::semantic::Semantic,
 };
 use biome_analyze::{
@@ -22,6 +23,7 @@ use biome_rowan::{
     AstNode, AstSeparatedList, BatchMutation, BatchMutationExt, SyntaxElement, SyntaxResult,
     TriviaPieceKind, chain_trivia_pieces, trim_leading_trivia_pieces, trim_trailing_trivia_pieces,
 };
+use biome_rule_options::use_import_type::{Style, UseImportTypeOptions};
 use rustc_hash::FxHashSet;
 
 declare_lint_rule! {
@@ -165,7 +167,7 @@ impl Rule for UseImportType {
     type Query = Semantic<JsImport>;
     type State = ImportTypeFix;
     type Signals = Option<Self::State>;
-    type Options = ImportTypeOptions;
+    type Options = UseImportTypeOptions;
 
     fn run(ctx: &RuleContext<Self>) -> Self::Signals {
         let source_type = ctx.source_type::<JsFileSource>();
@@ -174,32 +176,34 @@ impl Rule for UseImportType {
         }
         let import = ctx.query();
         let import_clause = import.import_clause().ok()?;
-        let extension = ctx.file_path().extension()?;
-        let extension = extension.as_bytes();
         // Import attributes and type-only imports are not compatible in ESM.
         if import_clause.attribute().is_some()
-            && extension != b"cts"
+            && ctx
+                .file_path()
+                .extension()
+                .is_none_or(|extension| extension != "cts")
             && !matches!(ctx.root(), AnyJsRoot::JsScript(_))
         {
             return None;
         }
         let model = ctx.model();
-        let style = ctx.options().style;
+        let references = ctx
+            .get_service::<EmbeddedValueReferences>()
+            .expect("embedded value references service");
+        let style = ctx.options().style.unwrap_or_default();
         match import_clause {
             AnyJsImportClause::JsImportBareClause(_) => None,
             AnyJsImportClause::JsImportCombinedClause(clause) => {
                 let default_binding = clause.default_specifier().ok()?.local_name().ok()?;
                 let default_binding = default_binding.as_js_identifier_binding()?;
-                let is_default_used_as_type = if ctx.jsx_runtime() == JsxRuntime::ReactClassic
-                    && is_global_react_import(default_binding, ReactLibrary::React)
-                {
+                let is_default_used_as_type = if is_jsx_factory_binding(ctx, default_binding) {
                     false
                 } else {
-                    is_only_used_as_type(model, default_binding)
+                    is_only_used_as_type(model, default_binding, references)
                 };
                 match clause.specifier().ok()? {
                     AnyJsCombinedSpecifier::JsNamedImportSpecifiers(named_specifiers) => {
-                        match named_import_type_fix(model, &named_specifiers, false) {
+                        match named_import_type_fix(model, &named_specifiers, false, references) {
                             Some(NamedImportTypeFix::UseImportType(specifiers)) => {
                                 if is_default_used_as_type {
                                     Some(ImportTypeFix::UseImportType)
@@ -248,15 +252,13 @@ impl Rule for UseImportType {
                     AnyJsCombinedSpecifier::JsNamespaceImportSpecifier(namespace_specifier) => {
                         let namespace_binding = namespace_specifier.local_name().ok()?;
                         let namespace_binding = namespace_binding.as_js_identifier_binding()?;
-                        if ctx.jsx_runtime() == JsxRuntime::ReactClassic
-                            && is_global_react_import(namespace_binding, ReactLibrary::React)
-                        {
+                        if is_jsx_factory_binding(ctx, namespace_binding) {
                             return None;
                         }
 
                         match (
                             is_default_used_as_type,
-                            is_only_used_as_type(model, namespace_binding),
+                            is_only_used_as_type(model, namespace_binding, references),
                         ) {
                             (true, true) => Some(ImportTypeFix::UseImportType),
                             (true, false) => {
@@ -276,19 +278,37 @@ impl Rule for UseImportType {
                 }
                 let default_binding = clause.default_specifier().ok()?.local_name().ok()?;
                 let default_binding = default_binding.as_js_identifier_binding()?;
-                if ctx.jsx_runtime() == JsxRuntime::ReactClassic
-                    && is_global_react_import(default_binding, ReactLibrary::React)
-                {
+                if is_jsx_factory_binding(ctx, default_binding) {
                     return None;
                 }
 
-                is_only_used_as_type(model, default_binding).then_some(ImportTypeFix::UseImportType)
+                is_only_used_as_type(model, default_binding, references)
+                    .then_some(ImportTypeFix::UseImportType)
             }
             AnyJsImportClause::JsImportNamedClause(clause) => {
+                let type_token = clause.type_token();
+                if style == Style::InlineType && type_token.is_some() {
+                    // Inline `import type` into `import { type }`
+                    let specifiers = clause
+                        .named_specifiers()
+                        .ok()?
+                        .specifiers()
+                        .iter()
+                        .collect::<Result<Vec<_>, _>>()
+                        .ok()?;
+                    return if specifiers.is_empty() {
+                        None
+                    } else {
+                        Some(ImportTypeFix::AddTypeQualifiers(
+                            specifiers.into_boxed_slice(),
+                        ))
+                    };
+                }
                 match named_import_type_fix(
                     model,
                     &clause.named_specifiers().ok()?,
-                    clause.type_token().is_some(),
+                    type_token.is_some(),
+                    references,
                 )? {
                     NamedImportTypeFix::UseImportType(specifiers) => {
                         if style == Style::InlineType {
@@ -326,13 +346,11 @@ impl Rule for UseImportType {
                 }
                 let namespace_binding = clause.namespace_specifier().ok()?.local_name().ok()?;
                 let namespace_binding = namespace_binding.as_js_identifier_binding()?;
-                if ctx.jsx_runtime() == JsxRuntime::ReactClassic
-                    && is_global_react_import(namespace_binding, ReactLibrary::React)
-                {
+                if is_jsx_factory_binding(ctx, namespace_binding) {
                     return None;
                 }
 
-                is_only_used_as_type(model, namespace_binding)
+                is_only_used_as_type(model, namespace_binding, references)
                     .then_some(ImportTypeFix::UseImportType)
             }
         }
@@ -393,16 +411,26 @@ impl Rule for UseImportType {
                 }
             }
             ImportTypeFix::AddTypeQualifiers(named_specifiers) => {
-                let mut diagnostic = RuleDiagnostic::new(
-                    rule_category!(),
-                    import_clause.range(),
-                    "Some named imports are only used as types.",
-                );
-                for specifier in named_specifiers {
-                    diagnostic =
-                        diagnostic.detail(specifier.range(), "This import is only used as a type.")
+                if import_clause.type_token().is_some() {
+                    RuleDiagnostic::new(
+                        rule_category!(),
+                        import_clause.range(),
+                        markup! {
+                            "Use "<Emphasis>"import { type }"</Emphasis>" instead of "<Emphasis>"import type"</Emphasis>"."
+                        },
+                    )
+                } else {
+                    let mut diagnostic = RuleDiagnostic::new(
+                        rule_category!(),
+                        import_clause.range(),
+                        "Some named imports are only used as types.",
+                    );
+                    for specifier in named_specifiers {
+                        diagnostic = diagnostic
+                            .detail(specifier.range(), "This import is only used as a type.")
+                    }
+                    diagnostic
                 }
-                diagnostic
             }
             ImportTypeFix::RemoveTypeQualifiers(type_tokens) => {
                 let mut diagnostic = RuleDiagnostic::new(
@@ -726,6 +754,10 @@ impl Rule for UseImportType {
                 }
             }
             ImportTypeFix::AddTypeQualifiers(specifiers) => {
+                if let Some(type_token) = import_clause.type_token() {
+                    // Inline `import type` into `import { type }`
+                    mutation.remove_token(type_token);
+                }
                 for specifier in specifiers {
                     let new_specifier = specifier
                         .clone()
@@ -774,25 +806,7 @@ impl Rule for UseImportType {
 )]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ImportTypeOptions {
-    pub style: Style,
-}
-
-/// Rule's options.
-#[derive(
-    Debug, Default, Copy, Clone, Deserializable, Eq, PartialEq, serde::Deserialize, serde::Serialize,
-)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub enum Style {
-    /// Use the best fitting style according to the situation
-    #[default]
-    Auto,
-    /// Always use inline type keywords
-    InlineType,
-    /// Always separate types in a dedicated `import type`
-    SeparatedType,
-}
+pub struct ImportTypeOptions {}
 
 #[derive(Debug)]
 pub enum ImportTypeFix {
@@ -806,10 +820,22 @@ pub enum ImportTypeFix {
 
 /// Returns `true` if all references of `binding` are only used as a type.
 /// If there is no reference, then returns `false`.
-fn is_only_used_as_type(model: &SemanticModel, binding: &JsIdentifierBinding) -> bool {
+fn is_only_used_as_type(
+    model: &SemanticModel,
+    binding: &JsIdentifierBinding,
+    references: &EmbeddedValueReferences,
+) -> bool {
+    // First check if the binding is used as a value in embedded non-source snippets (templates)
+    if let Ok(name_token) = binding.name_token()
+        && references.is_used_as_value(name_token.text_trimmed())
+    {
+        return false;
+    }
+
+    // Then check semantic model for type-only usage
     let mut result = false;
     for reference in binding.all_references(model) {
-        if let Some(reference) = AnyJsIdentifierUsage::cast_ref(reference.syntax()) {
+        if let Some(reference) = AnyJsIdentifierUsage::cast_ref(&reference.syntax()) {
             result = reference.is_only_type();
             if !result {
                 break;
@@ -831,6 +857,7 @@ fn named_import_type_fix(
     model: &SemanticModel,
     named_specifiers: &JsNamedImportSpecifiers,
     has_type_token: bool,
+    value_refs: &EmbeddedValueReferences,
 ) -> Option<NamedImportTypeFix> {
     let specifiers = named_specifiers.specifiers();
     if specifiers.is_empty() {
@@ -864,6 +891,7 @@ fn named_import_type_fix(
                         Some(is_only_used_as_type(
                             model,
                             local_name.as_js_identifier_binding()?,
+                            value_refs,
                         ))
                     })
                     .unwrap_or(false)
@@ -1087,4 +1115,35 @@ fn split_named_import_specifiers(
         named_specifiers.with_specifiers(value_specifiers)
     };
     Some((named_type, named_value))
+}
+
+/// Helper function to check if a binding is a JSX factory or fragment factory
+fn is_jsx_factory_binding(
+    ctx: &RuleContext<UseImportType>,
+    binding: &biome_js_syntax::JsIdentifierBinding,
+) -> bool {
+    if ctx.jsx_runtime() != JsxRuntime::ReactClassic {
+        return false;
+    }
+
+    // Check for standard React import
+    if is_global_react_import(binding, ReactLibrary::React) {
+        return true;
+    }
+
+    // Check for custom JSX factory
+    if let Some(jsx_factory) = ctx.jsx_factory()
+        && is_jsx_factory_import(binding, jsx_factory)
+    {
+        return true;
+    }
+
+    // Check for custom JSX fragment factory
+    if let Some(jsx_fragment_factory) = ctx.jsx_fragment_factory()
+        && is_jsx_factory_import(binding, jsx_fragment_factory)
+    {
+        return true;
+    }
+
+    false
 }

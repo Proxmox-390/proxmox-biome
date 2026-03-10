@@ -5,7 +5,7 @@ use biome_formatter::separated::TrailingSeparator;
 use biome_formatter::{BracketSpacing, Expand, IndentWidth, prelude::*};
 use biome_formatter::{
     CstFormatContext, FormatContext, FormatOptions, IndentStyle, LineEnding, LineWidth,
-    TransformSourceMap,
+    TrailingNewline, TransformSourceMap,
 };
 use biome_json_syntax::{JsonFileSource, JsonLanguage};
 use std::default::Default;
@@ -68,8 +68,10 @@ pub struct JsonFormatOptions {
     trailing_commas: TrailingCommas,
     expand: Expand,
     bracket_spacing: BracketSpacing,
+    /// Whether to add a trailing newline at the end of the file. Defaults to true.
+    trailing_newline: TrailingNewline,
     /// The kind of file
-    file_source: JsonFileSource,
+    _file_source: JsonFileSource,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Deserializable, Merge, PartialEq)]
@@ -78,12 +80,11 @@ pub struct JsonFormatOptions {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum TrailingCommas {
     #[default]
     /// The formatter will remove the trailing commas.
     None,
-    /// The trailing commas are allowed and advised only in JSONC files. Trailing commas are removed from JSON files.
+    /// The trailing commas are allowed and advised in JSON and JSONC files.
     All,
 }
 
@@ -108,10 +109,26 @@ impl fmt::Display for TrailingCommas {
     }
 }
 
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for TrailingCommas {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("JsonTrailingCommas")
+    }
+
+    fn json_schema(_generator: &mut schemars::generate::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "enum": ["none", "all"],
+            "description": "Print trailing commas wherever possible in multi-line comma-separated syntactic structures for JSON files."
+        })
+    }
+}
+
 impl JsonFormatOptions {
     pub fn new(file_source: JsonFileSource) -> Self {
         Self {
-            file_source,
+            _file_source: file_source,
+            trailing_newline: TrailingNewline::default(),
             ..Default::default()
         }
     }
@@ -151,6 +168,11 @@ impl JsonFormatOptions {
         self
     }
 
+    pub fn with_trailing_newline(mut self, trailing_newline: TrailingNewline) -> Self {
+        self.trailing_newline = trailing_newline;
+        self
+    }
+
     pub fn set_indent_style(&mut self, indent_style: IndentStyle) {
         self.indent_style = indent_style;
     }
@@ -180,6 +202,10 @@ impl JsonFormatOptions {
         self.expand = expand;
     }
 
+    pub fn set_trailing_newline(&mut self, trailing_newline: TrailingNewline) {
+        self.trailing_newline = trailing_newline;
+    }
+
     pub fn bracket_spacing(&self) -> BracketSpacing {
         self.bracket_spacing
     }
@@ -188,15 +214,15 @@ impl JsonFormatOptions {
         self.expand
     }
 
+    pub fn trailing_newline(&self) -> TrailingNewline {
+        self.trailing_newline
+    }
+
     pub(crate) fn to_trailing_separator(&self) -> TrailingSeparator {
         match self.trailing_commas {
             TrailingCommas::None => TrailingSeparator::Omit,
             TrailingCommas::All => TrailingSeparator::Allowed,
         }
-    }
-
-    pub(crate) fn file_source(&self) -> &JsonFileSource {
-        &self.file_source
     }
 }
 
@@ -217,6 +243,10 @@ impl FormatOptions for JsonFormatOptions {
         self.line_ending
     }
 
+    fn trailing_newline(&self) -> TrailingNewline {
+        self.trailing_newline
+    }
+
     fn as_print_options(&self) -> PrinterOptions {
         PrinterOptions::from(self)
     }
@@ -231,7 +261,6 @@ impl fmt::Display for JsonFormatOptions {
         writeln!(f, "Trailing commas: {}", self.trailing_commas)?;
         writeln!(f, "Expand: {}", self.expand)?;
         writeln!(f, "Bracket spacing: {}", self.bracket_spacing.value())?;
-
-        Ok(())
+        writeln!(f, "Trailing newline: {}", self.trailing_newline.value())
     }
 }

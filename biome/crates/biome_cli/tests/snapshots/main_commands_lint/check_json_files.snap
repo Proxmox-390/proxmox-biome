@@ -1,6 +1,6 @@
 ---
 source: crates/biome_cli/tests/snap_test.rs
-expression: content
+expression: redactor(content)
 ---
 ## `biome.json`
 
@@ -43,7 +43,7 @@ test.json:1:3 lint/suspicious/noDuplicateObjectKeys ━━━━━━━━━�
   > 1 │ { "foo": true, "foo": true }
       │   ^^^^^
   
-  i This where a duplicated key was declared again.
+  i This is where a duplicated key was declared again.
   
   > 1 │ { "foo": true, "foo": true }
       │                ^^^^^

@@ -1,4 +1,5 @@
 use crate::parser::CssParser;
+use biome_console::markup;
 use biome_css_syntax::CssSyntaxKind;
 use biome_parser::Parser;
 use biome_parser::diagnostic::{expect_one_of, expected_any, expected_node};
@@ -171,6 +172,7 @@ pub(crate) fn expected_any_pseudo_class(p: &CssParser, range: TextRange) -> Pars
             "any-link",
             "local-link",
             "scope",
+            "state",
             "current",
             "past",
             "future",
@@ -227,6 +229,62 @@ pub(crate) fn expected_component_value(p: &CssParser, range: TextRange) -> Parse
     .into_diagnostic(p)
 }
 
+pub(crate) fn expected_scss_expression(p: &CssParser, range: TextRange) -> ParseDiagnostic {
+    expected_node("SCSS expression", range, p)
+}
+
+pub(crate) fn scss_ellipsis_not_allowed(p: &CssParser, range: TextRange) -> ParseDiagnostic {
+    p.err_builder(
+        "SCSS arbitrary arguments (`...`) are only allowed in function call arguments.",
+        range,
+    )
+    .with_hint(markup! {
+        "Use `...` only for function arguments, for example `fn($args...)`."
+    })
+}
+
 pub(crate) fn expected_declaration(p: &CssParser, range: TextRange) -> ParseDiagnostic {
     expected_node("<declaration>", range, p)
+}
+
+pub(crate) fn tailwind_disabled(p: &CssParser, range: TextRange) -> ParseDiagnostic {
+    p.err_builder(markup! { "Tailwind-specific syntax is disabled."}, range)
+        .with_hint(markup! {
+            "Enable "<Emphasis>"`tailwindDirectives`"</Emphasis>" in the css parser options, or remove this if you are not using Tailwind CSS."
+        })
+}
+
+pub(crate) fn expected_tw_source(p: &CssParser, range: TextRange) -> ParseDiagnostic {
+    expected_any(&["string literal", "inline(\"...\")"], range, p)
+}
+
+pub(crate) fn scss_only_syntax_error(
+    p: &CssParser,
+    syntax: &str,
+    range: TextRange,
+) -> ParseDiagnostic {
+    p.err_builder(
+        format!(
+            "{syntax} are an SCSS only feature. Convert your file to an SCSS file or remove the syntax."
+        ),
+        range,
+    )
+        .with_hint(markup! { "SCSS only syntax" })
+}
+
+pub(crate) fn inconsistent_scss_bracketed_list_separators(
+    p: &CssParser,
+    expected: &str,
+    found: &str,
+    range: TextRange,
+) -> ParseDiagnostic {
+    p.err_builder(
+        format!(
+            "Mixed separators in SCSS bracketed lists are not supported. Expected {expected} but found {found}."
+        ),
+        range,
+    )
+    .with_hint(markup! {
+        "Use one separator style per bracketed list."
+    })
 }
