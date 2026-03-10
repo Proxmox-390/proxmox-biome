@@ -9,6 +9,9 @@ include /usr/share/dpkg/pkg-info.mk
 
 override_dh_update_autotools_config:
 
+override_dh_clean:
+	dh_clean -X Cargo.toml.orig
+
 override_dh_autoclean:
 	cargo clean
 	dh_autoclean
