@@ -1,3 +1,4 @@
+include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/pkg-info.mk
 
 PACKAGE=proxmox-biome
