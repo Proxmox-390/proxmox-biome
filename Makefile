@@ -1,9 +1,10 @@
 include /usr/share/dpkg/pkg-info.mk
 
 PACKAGE=proxmox-biome
+ARCH := $(DEB_HOST_ARCH)
 
-DEB=$(PACKAGE)_$(DEB_VERSION_UPSTREAM_REVISION)_amd64.deb
-DEB_DBG=$(PACKAGE)-dbgsym_$(DEB_VERSION_UPSTREAM_REVISION)_amd64.deb
+DEB=$(PACKAGE)_$(DEB_VERSION_UPSTREAM_REVISION)_$(ARCH).deb
+DEB_DBG=$(PACKAGE)-dbgsym_$(DEB_VERSION_UPSTREAM_REVISION)_$(ARCH).deb
 
 BUILDDIR=$(PACKAGE)-$(DEB_VERSION_UPSTREAM)
 
@@ -51,7 +52,7 @@ $(DEB) $(DEB_DBG) &: $(BUILDDIR)
 .PHONY: upload
 upload: UPLOAD_DIST ?= $(DEB_DISTRIBUTION)
 upload: $(DEB) $(DEB_DBG)
-	tar cf - $(DEB) $(DEB_DBG) | ssh repoman@repo.proxmox.com -- upload --product devel --dist $(UPLOAD_DIST)
+	tar cf - $(DEB) $(DEB_DBG) | ssh repoman@repo.proxmox.com -- upload --product devel --dist $(UPLOAD_DIST) --arch $(ARCH)
 
 dinstall: deb
 	dpkg -i $(DEB)
