@@ -1,3 +1,9 @@
+proxmox-biome (2.4.6-2) trixie; urgency=medium
+
+  * d/rules: increase jemalloc page size to 64k on ARM.
+
+ -- Proxmox Support Team <support@proxmox.com>  Sun, 02 Aug 2026 20:52:59 +0200
+
 proxmox-biome (2.4.6-1) trixie; urgency=medium
 
   * add 'pgettext' and 'npgettext' functions to allowed globals.
