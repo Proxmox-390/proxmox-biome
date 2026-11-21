@@ -1,3 +1,11 @@
+proxmox-biome (2.4.6-2+s390x1) trixie; urgency=medium
+
+  * Build for s390x without build-host paths in the binary.
+  * Drop an HTML parser benchmark fixture (a copy of a third-party web page)
+    from the source.
+
+ -- Yvan Janssens <yvanj@cyber.gent>  Sat, 21 Nov 2026 19:32:17 +0100
+
 proxmox-biome (2.4.6-2) trixie; urgency=medium
 
   * d/rules: increase jemalloc page size to 64k on ARM.
